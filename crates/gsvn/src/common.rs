@@ -74,10 +74,11 @@ pub fn format_datetime(ts: Timestamp) -> String {
 
 /// Heuristic binary check: non-text `svn:mime-type`, or NUL in the first 8 KB.
 pub fn is_binary(data: &[u8], mime_type: Option<&str>) -> bool {
-    if let Some(mime) = mime_type {
-        if !mime.starts_with("text/") && !mime.is_empty() {
-            return true;
-        }
+    if let Some(mime) = mime_type
+        && !mime.starts_with("text/")
+        && !mime.is_empty()
+    {
+        return true;
     }
     data[..data.len().min(8192)].contains(&0)
 }
