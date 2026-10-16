@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::os::unix::process::CommandExt;
 use std::process::{Child, Command, ExitStatus, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread;
 use std::time::Duration;
@@ -40,6 +40,13 @@ const MAX_STDERR: usize = 256 * 1024;
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Per-job context: the cancel token and the limiter ticket, taken when the
+/// job is submitted so jobs of equal priority start in submission order.
+pub(crate) struct JobCtx {
+    pub(crate) token: CancelToken,
+    ticket: u64,
 }
 
 /// Shared state behind [`crate::Svn`].
@@ -177,6 +184,13 @@ impl Inner {
         }
     }
 
+    pub(crate) fn job_ctx(&self, token: CancelToken) -> JobCtx {
+        JobCtx {
+            token,
+            ticket: self.limiter.seq.fetch_add(1, Ordering::SeqCst),
+        }
+    }
+
     pub(crate) fn set_credentials(&self, host_key: &str, creds: Credentials) {
         let mut hosts = lock(&self.hosts);
         let st = hosts.entry(host_key.to_owned()).or_default();
@@ -213,9 +227,10 @@ impl Inner {
         url: &RepoUrl,
         args: &[String],
         prio: Priority,
-        token: &CancelToken,
+        ctx: &JobCtx,
         mut consume: impl FnMut(&mut dyn BufRead, &Stopper) -> Result<T, ParseError>,
     ) -> Result<T, SvnError> {
+        let token = &ctx.token;
         let host = url.host_key();
         let mut prompts = 0;
         let mut retries = 0;
@@ -225,7 +240,7 @@ impl Inner {
             }
             let snap = self.snapshot(&host);
             let result = {
-                let Some(_permit) = self.limiter.acquire(&host, prio, token) else {
+                let Some(_permit) = self.limiter.acquire(&host, prio, ctx.ticket, token) else {
                     return Err(SvnError::cancelled());
                 };
                 self.run_process(args, &snap, token, &mut consume)
@@ -662,6 +677,7 @@ pub(crate) fn cert_failures(message: &str) -> Vec<String> {
 
 struct Limiter {
     max: usize,
+    seq: AtomicU64,
     state: Mutex<LimState>,
     cv: Condvar,
 }
@@ -669,7 +685,6 @@ struct Limiter {
 #[derive(Default)]
 struct LimState {
     hosts: HashMap<String, HostQueue>,
-    seq: u64,
 }
 
 #[derive(Default)]
@@ -710,6 +725,7 @@ impl Limiter {
     fn new(max: usize) -> Self {
         Self {
             max,
+            seq: AtomicU64::new(0),
             state: Mutex::default(),
             cv: Condvar::new(),
         }
@@ -717,10 +733,14 @@ impl Limiter {
 
     /// Wait for a slot: highest priority first, FIFO within a priority.
     /// `None` if cancelled while queued.
-    fn acquire(&self, host: &str, prio: Priority, token: &CancelToken) -> Option<Permit<'_>> {
+    fn acquire(
+        &self,
+        host: &str,
+        prio: Priority,
+        ticket: u64,
+        token: &CancelToken,
+    ) -> Option<Permit<'_>> {
         let mut st = lock(&self.state);
-        st.seq += 1;
-        let ticket = st.seq;
         st.hosts
             .entry(host.to_owned())
             .or_default()

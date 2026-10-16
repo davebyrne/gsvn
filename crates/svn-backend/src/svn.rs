@@ -4,7 +4,7 @@ use crate::error::{ErrorKind, SvnError};
 use crate::job::{CancelToken, Job, Stream};
 use crate::model::*;
 use crate::parse::{self, ParseError};
-use crate::runner::Inner;
+use crate::runner::{Inner, JobCtx};
 use crate::url::RepoUrl;
 use std::io::Read;
 use std::path::PathBuf;
@@ -263,14 +263,15 @@ impl Svn {
 
     fn spawn_job<T: Send + 'static>(
         &self,
-        f: impl FnOnce(&Inner, &CancelToken) -> Result<T, SvnError> + Send + 'static,
+        f: impl FnOnce(&Inner, &JobCtx) -> Result<T, SvnError> + Send + 'static,
     ) -> Job<T> {
         let (job, tx, token) = Job::new();
         let inner = self.inner.clone();
+        let ctx = inner.job_ctx(token);
         let spawned = std::thread::Builder::new()
             .name("svn-job".into())
             .spawn(move || {
-                let r = f(&inner, &token);
+                let r = f(&inner, &ctx);
                 let _ = tx.try_send(r);
             });
         match spawned {
@@ -284,16 +285,17 @@ impl Svn {
 
     fn spawn_stream<T: Send + 'static>(
         &self,
-        f: impl FnOnce(&Inner, &CancelToken, &mut Batcher<T>) -> Result<(), SvnError> + Send + 'static,
+        f: impl FnOnce(&Inner, &JobCtx, &mut Batcher<T>) -> Result<(), SvnError> + Send + 'static,
     ) -> Stream<T> {
         let (stream, tx, token) = Stream::new();
         let inner = self.inner.clone();
+        let ctx = inner.job_ctx(token);
         let size = inner.config.batch_size;
         let spawned = std::thread::Builder::new()
             .name("svn-stream".into())
             .spawn(move || {
-                let mut b = Batcher::new(tx, token.clone(), size);
-                match f(&inner, &token, &mut b) {
+                let mut b = Batcher::new(tx, ctx.token.clone(), size);
+                match f(&inner, &ctx, &mut b) {
                     Ok(()) => {
                         b.flush();
                     }
@@ -321,9 +323,9 @@ impl Svn {
         }
         let url = url.clone();
         let rev = rev.clone();
-        self.spawn_job(move |inner, token| {
+        self.spawn_job(move |inner, ctx| {
             let a = args(["info", "--xml", &url.with_peg(&rev)]);
-            let infos = inner.execute(&url, &a, prio, token, |r, _| parse::info(r))?;
+            let infos = inner.execute(&url, &a, prio, ctx, |r, _| parse::info(r))?;
             let info = infos.into_iter().next().ok_or_else(|| parse_failure("info"))?;
             // URL@HEAD and URL@N are the same node when N is the operative
             // revision, so a resolved HEAD can be cached under its number.
@@ -346,7 +348,7 @@ impl Svn {
             });
         }
         let url = url.clone();
-        self.spawn_stream(move |inner, token, b| {
+        self.spawn_stream(move |inner, ctx, b| {
             let a = args([
                 "list",
                 "--xml",
@@ -358,7 +360,7 @@ impl Svn {
             let mut all: Vec<Entry> = Vec::new();
             let mut cacheable = true;
             let mut complete = false;
-            inner.execute(&url, &a, prio, token, |r, stop| {
+            inner.execute(&url, &a, prio, ctx, |r, stop| {
                 b.reset();
                 all.clear();
                 cacheable = true;
@@ -398,7 +400,7 @@ impl Svn {
     pub fn log(&self, url: &RepoUrl, peg: RevNum, query: &LogQuery, prio: Priority) -> Stream<LogEntry> {
         let url = url.clone();
         let q = query.clone();
-        self.spawn_stream(move |inner, token, b| {
+        self.spawn_stream(move |inner, ctx, b| {
             let mut a = args(["log", "--xml", &url.with_peg(&Rev::Number(peg))]);
             a.push("-r".into());
             a.push(format!("{}:{}", q.start.to_svn_arg(), q.end.to_svn_arg()));
@@ -416,7 +418,7 @@ impl Svn {
             if q.verbose {
                 a.push("-v".into());
             }
-            inner.execute(&url, &a, prio, token, |r, stop| {
+            inner.execute(&url, &a, prio, ctx, |r, stop| {
                 b.reset();
                 parse::log(r, |e| {
                     if !stop.is_stopped() && !b.push(e) {
@@ -436,7 +438,7 @@ impl Svn {
             return Job::ready(Ok(hit));
         }
         let url = url.clone();
-        self.spawn_job(move |inner, token| {
+        self.spawn_job(move |inner, ctx| {
             let a = args([
                 "log",
                 "--xml",
@@ -445,7 +447,7 @@ impl Svn {
                 &rev.to_string(),
                 &url.with_peg(&Rev::Number(rev)),
             ]);
-            let found = inner.execute(&url, &a, prio, token, |r, _| {
+            let found = inner.execute(&url, &a, prio, ctx, |r, _| {
                 let mut found = None;
                 parse::log(r, |e| {
                     if found.is_none() || e.rev == rev {
@@ -477,9 +479,9 @@ impl Svn {
             return Job::ready(Ok(CatOutput { data, truncated }));
         }
         let url = url.clone();
-        self.spawn_job(move |inner, token| {
+        self.spawn_job(move |inner, ctx| {
             let a = args(["cat", &url.with_peg(&Rev::Number(rev))]);
-            let out = inner.execute(&url, &a, prio, token, |r, stop| {
+            let out = inner.execute(&url, &a, prio, ctx, |r, stop| {
                 let mut data = Vec::new();
                 let io_err = |e: std::io::Error| ParseError(format!("reading svn output: {e}"));
                 match max_bytes {
@@ -510,23 +512,23 @@ impl Svn {
     /// `svn proplist -v --xml URL@REV`.
     pub fn proplist(&self, url: &RepoUrl, rev: RevNum, prio: Priority) -> Job<Vec<Property>> {
         let url = url.clone();
-        self.spawn_job(move |inner, token| {
+        self.spawn_job(move |inner, ctx| {
             let a = args(["proplist", "-v", "--xml", &url.with_peg(&Rev::Number(rev))]);
-            inner.execute(&url, &a, prio, token, |r, _| parse::proplist(r))
+            inner.execute(&url, &a, prio, ctx, |r, _| parse::proplist(r))
         })
     }
 
     /// `svn blame --xml URL@REV [-r START:REV]`.
     pub fn blame(&self, url: &RepoUrl, rev: RevNum, start: Option<RevNum>, prio: Priority) -> Stream<BlameLine> {
         let url = url.clone();
-        self.spawn_stream(move |inner, token, b| {
+        self.spawn_stream(move |inner, ctx, b| {
             let mut a = args(["blame", "--xml"]);
             if let Some(s) = start {
                 a.push("-r".into());
                 a.push(format!("{s}:{rev}"));
             }
             a.push(url.with_peg(&Rev::Number(rev)));
-            inner.execute(&url, &a, prio, token, |r, stop| {
+            inner.execute(&url, &a, prio, ctx, |r, stop| {
                 b.reset();
                 parse::blame(r, |l| {
                     if !stop.is_stopped() && !b.push(l) {
@@ -540,7 +542,7 @@ impl Svn {
     /// `svn diff --internal-diff ...` streamed per file.
     pub fn diff(&self, spec: &DiffSpec, prio: Priority) -> Stream<FileDiff> {
         let spec = spec.clone();
-        self.spawn_stream(move |inner, token, b| {
+        self.spawn_stream(move |inner, ctx, b| {
             let (url, a) = match &spec {
                 DiffSpec::Change { url, rev } => (
                     url,
@@ -563,7 +565,7 @@ impl Svn {
                     ]),
                 ),
             };
-            inner.execute(url, &a, prio, token, |r, stop| {
+            inner.execute(url, &a, prio, ctx, |r, stop| {
                 b.reset();
                 parse::diff(r, |f| {
                     if !stop.is_stopped() && !b.push(f) {
