@@ -165,6 +165,24 @@ impl Proc {
     }
 }
 
+/// Kills and reaps the child, and stops the watcher, if `run_process`
+/// returns early or unwinds (e.g. a parser panic). No-op after a normal run.
+struct ProcGuard {
+    proc: Arc<Proc>,
+    finished: Arc<AtomicBool>,
+}
+
+impl Drop for ProcGuard {
+    fn drop(&mut self) {
+        self.finished.store(true, Ordering::SeqCst);
+        self.proc.kill();
+        let mut st = lock(&self.proc.child);
+        if st.status.is_none() {
+            st.status = st.child.wait().ok();
+        }
+    }
+}
+
 impl Inner {
     pub(crate) fn new(mut config: SvnConfig) -> Self {
         config.max_concurrent_per_host = config.max_concurrent_per_host.max(1);
@@ -503,6 +521,12 @@ impl Inner {
             stopped: AtomicBool::new(false),
         });
 
+        let finished = Arc::new(AtomicBool::new(false));
+        let _guard = ProcGuard {
+            proc: proc.clone(),
+            finished: finished.clone(),
+        };
+
         // stderr reader: avoids pipe deadlock when svn writes lots of warnings.
         let (err_tx, err_rx) = std::sync::mpsc::channel();
         thread::Builder::new()
@@ -517,7 +541,6 @@ impl Inner {
             .map_err(|e| fail(ErrorKind::Other, format!("Cannot spawn thread: {e}"), String::new()))?;
 
         // Watcher: kills the process group promptly on cancellation.
-        let finished = Arc::new(AtomicBool::new(false));
         let watcher = {
             let proc = proc.clone();
             let finished = finished.clone();

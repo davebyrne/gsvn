@@ -229,6 +229,20 @@ impl<T> Batcher<T> {
     }
 }
 
+/// Turn a panic on a worker thread (e.g. a parser bug) into an error
+/// instead of silently closing the channel (which would look like a
+/// cancellation).
+fn catch_panic<T>(f: impl FnOnce() -> Result<T, SvnError>) -> Result<T, SvnError> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).unwrap_or_else(|p| {
+        let msg = p
+            .downcast_ref::<&str>()
+            .map(|s| (*s).to_owned())
+            .or_else(|| p.downcast_ref::<String>().cloned())
+            .unwrap_or_default();
+        Err(SvnError::new(ErrorKind::Other, format!("Internal error: {msg}")))
+    })
+}
+
 fn args<const N: usize>(a: [&str; N]) -> Vec<String> {
     a.iter().map(|s| (*s).to_owned()).collect()
 }
@@ -271,7 +285,7 @@ impl Svn {
         let spawned = std::thread::Builder::new()
             .name("svn-job".into())
             .spawn(move || {
-                let r = f(&inner, &ctx);
+                let r = catch_panic(|| f(&inner, &ctx));
                 let _ = tx.try_send(r);
             });
         match spawned {
@@ -295,7 +309,7 @@ impl Svn {
             .name("svn-stream".into())
             .spawn(move || {
                 let mut b = Batcher::new(tx, ctx.token.clone(), size);
-                match f(&inner, &ctx, &mut b) {
+                match catch_panic(|| f(&inner, &ctx, &mut b)) {
                     Ok(()) => {
                         b.flush();
                     }
