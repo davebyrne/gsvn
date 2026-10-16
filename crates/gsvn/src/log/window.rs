@@ -51,7 +51,7 @@ pub struct LogWindow {
     multi_page: adw::StatusPage,
     meta_rev: gtk::Label,
     meta_info: gtk::Label,
-    message: gtk::Label,
+    message: gtk::TextView,
     pub(super) paths_stack: gtk::Stack,
     paths_count: gtk::Label,
     pub(super) paths_filter: gtk::SearchEntry,
@@ -64,6 +64,7 @@ pub struct LogWindow {
     path_menu_button: gtk::MenuButton,
     path_popover: gtk::PopoverMenu,
 
+    apply_pending: Cell<bool>,
     pub(super) state: RefCell<State>,
 }
 
@@ -161,6 +162,7 @@ impl LogWindow {
         let empty_page = adw::StatusPage::builder()
             .icon_name("edit-find-symbolic")
             .title("No Matching Revisions")
+            .css_classes(["compact"])
             .build();
         let loading = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
@@ -213,12 +215,11 @@ impl LogWindow {
 
         // Details pane.
         let none_page = adw::StatusPage::builder()
-            .icon_name("view-list-symbolic")
             .title("No Revision Selected")
-            .css_classes(["compact"])
+            .description("Select a revision to see its message and changed paths")
+            .css_classes(["compact", "dim-label"])
             .build();
         let multi_page = adw::StatusPage::builder()
-            .icon_name("view-list-symbolic")
             .css_classes(["compact"])
             .build();
         let meta_rev = gtk::Label::builder().xalign(0.0).css_classes(["title-4"]).selectable(true).build();
@@ -232,18 +233,18 @@ impl LogWindow {
         let meta_box = gtk::Box::builder().spacing(12).build();
         meta_box.append(&meta_rev);
         meta_box.append(&meta_info);
-        let message = gtk::Label::builder()
-            .xalign(0.0)
-            .yalign(0.0)
-            .wrap(true)
-            .wrap_mode(gtk::pango::WrapMode::WordChar)
-            .selectable(true)
+        install_css();
+        let message = gtk::TextView::builder()
+            .editable(false)
+            .cursor_visible(false)
+            .wrap_mode(gtk::WrapMode::WordChar)
+            .css_classes(["log-message"])
             .build();
         let message_scroller = gtk::ScrolledWindow::builder()
             .child(&message)
             .hscrollbar_policy(gtk::PolicyType::Never)
             .propagate_natural_height(true)
-            .max_content_height(180)
+            .max_content_height(160)
             .build();
 
         let paths_count = gtk::Label::builder().xalign(0.0).hexpand(true).css_classes(["dim-label"]).build();
@@ -329,7 +330,7 @@ impl LogWindow {
             .resize_end_child(true)
             .shrink_start_child(false)
             .shrink_end_child(false)
-            .position(380)
+            .position(360)
             .wide_handle(true)
             .build();
 
@@ -394,6 +395,7 @@ impl LogWindow {
             paths_view,
             path_menu_button,
             path_popover,
+            apply_pending: Cell::new(false),
             state: RefCell::new(State {
                 root: None,
                 root_error: None,
@@ -667,8 +669,24 @@ impl LogWindow {
         }
     }
 
-    /// Read the top bar and restart paging if the filter changed.
+    /// Re-read the top bar on the next idle. Coalesces bursts such as the
+    /// delete + insert of a programmatic `set_text` (a search entry reports
+    /// an empty text immediately, without its delay).
     fn apply_filters(self: &Rc<Self>) {
+        if self.apply_pending.replace(true) {
+            return;
+        }
+        let weak = Rc::downgrade(self);
+        glib::idle_add_local_once(move || {
+            if let Some(this) = weak.upgrade() {
+                this.apply_pending.set(false);
+                this.apply_filters_now();
+            }
+        });
+    }
+
+    /// Read the top bar and restart paging if the filter changed.
+    fn apply_filters_now(self: &Rc<Self>) {
         let terms = logic::split_search_terms(&self.search.text());
         let newest = parse_range_entry(&self.range_newest);
         let oldest = parse_range_entry(&self.range_oldest);
@@ -1024,10 +1042,10 @@ impl LogWindow {
         self.meta_info.set_text(&if date.is_empty() { author.to_owned() } else { format!("{author} · {date}") });
         let message = entry.message.trim_end();
         if message.is_empty() {
-            self.message.set_text("(no message)");
+            self.message.buffer().set_text("(no message)");
             self.message.add_css_class("dim-label");
         } else {
-            self.message.set_text(message);
+            self.message.buffer().set_text(message);
             self.message.remove_css_class("dim-label");
         }
 
@@ -1261,6 +1279,20 @@ impl LogWindow {
         self.window.clipboard().set_text(text);
         self.toasts.add_toast(adw::Toast::builder().title(toast).timeout(2).build());
     }
+}
+
+/// Window-independent styles (installed once per display).
+fn install_css() {
+    thread_local! {
+        static DONE: Cell<bool> = const { Cell::new(false) };
+    }
+    if DONE.with(|d| d.replace(true)) {
+        return;
+    }
+    let Some(display) = gdk::Display::default() else { return };
+    let provider = gtk::CssProvider::new();
+    provider.load_from_string("textview.log-message, textview.log-message > text { background: transparent; }");
+    gtk::style_context_add_provider_for_display(&display, &provider, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
 }
 
 fn shortcut(accel: &str, action: &str) -> gtk::Shortcut {

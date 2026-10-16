@@ -61,7 +61,7 @@ pub fn revision_columns(view: &gtk::ColumnView, context: &ContextHandler) {
     let rev = column(
         "Revision",
         || {
-            let label = cell_label(gtk::pango::EllipsizeMode::None, 1.0);
+            let label = cell_label(gtk::pango::EllipsizeMode::None, 0.0);
             label.add_css_class("numeric");
             label
         },

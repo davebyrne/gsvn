@@ -13,7 +13,7 @@ pub const PAGE_SIZE: u32 = 200;
 /// nothing about where the next one should start.
 pub const SEARCH_WINDOW_MIN: RevNum = 2_000;
 /// Upper bound for the adaptive search window.
-pub const SEARCH_WINDOW_MAX: RevNum = 128_000;
+pub const SEARCH_WINDOW_MAX: RevNum = 32_000;
 /// Fewer matches than this per window widens the next window.
 const SEARCH_WANT: usize = 50;
 /// More matches than this per window narrows the next window.
