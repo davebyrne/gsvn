@@ -289,7 +289,6 @@ fn proplist_file() {
 }
 
 #[test]
-#[ignore = "needs parse::diff from backend/parsers"]
 fn diff_change_and_range() {
     let r = repo();
     let svn = svn_for(r);
