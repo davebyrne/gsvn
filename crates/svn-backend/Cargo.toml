@@ -6,3 +6,11 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+async-channel = "2.5"
+jiff = "0.2.37"
+lru = "0.18"
+quick-xml = "0.42"
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3.27"
