@@ -29,6 +29,7 @@ pub struct LogWindow {
     pub(super) window: adw::ApplicationWindow,
     window_title: adw::WindowTitle,
     toasts: adw::ToastOverlay,
+    pub(super) content_stack: gtk::Stack,
     actions: gio::SimpleActionGroup,
 
     pub(super) search: gtk::SearchEntry,
@@ -59,7 +60,7 @@ pub struct LogWindow {
     paths_custom_filter: gtk::CustomFilter,
     pub(super) paths_store: gio::ListStore,
     paths_filtered: gtk::FilterListModel,
-    paths_selection: gtk::SingleSelection,
+    pub(super) paths_selection: gtk::SingleSelection,
     paths_view: gtk::ColumnView,
     path_menu_button: gtk::MenuButton,
     path_popover: gtk::PopoverMenu,
@@ -336,10 +337,13 @@ impl LogWindow {
 
         let toasts = adw::ToastOverlay::new();
         toasts.set_child(Some(&paned));
+        // "error" (initial load failed) is added on demand.
+        let content_stack = gtk::Stack::new();
+        content_stack.add_named(&toasts, Some("main"));
         let view = adw::ToolbarView::new();
         view.add_top_bar(&header);
         view.add_top_bar(&filter_bar);
-        view.set_content(Some(&toasts));
+        view.set_content(Some(&content_stack));
         window.set_content(Some(&view));
 
         let rev_menu = gtk::PopoverMenu::builder()
@@ -364,6 +368,7 @@ impl LogWindow {
             window,
             window_title,
             toasts,
+            content_stack,
             actions: gio::SimpleActionGroup::new(),
             search,
             range_newest,
@@ -733,8 +738,9 @@ impl LogWindow {
         self.page_banner.set_revealed(false);
         self.store.remove_all();
         self.list_stack.set_visible_child_name("loading");
-        if let Some(old) = self.list_stack.child_by_name("error") {
-            self.list_stack.remove(&old);
+        self.content_stack.set_visible_child_name("main");
+        if let Some(old) = self.content_stack.child_by_name("error") {
+            self.content_stack.remove(&old);
         }
         self.load_next_page();
     }
@@ -827,11 +833,8 @@ impl LogWindow {
                 self.show_list_error(&err);
                 return;
             } else {
-                self.page_banner.set_title(&format!("Couldn’t load more revisions: {}", err.message));
-                self.page_banner.set_revealed(true);
-                st.page_error = Some(err);
                 drop(st);
-                self.update_status();
+                self.show_page_error(err);
                 return;
             }
         } else {
@@ -876,6 +879,14 @@ impl LogWindow {
                 this.maybe_load_more();
             }
         });
+    }
+
+    /// A follow-up page failed: keep what is loaded, offer Retry.
+    pub(super) fn show_page_error(&self, err: SvnError) {
+        self.page_banner.set_title(&format!("Couldn’t load more revisions: {}", err.message));
+        self.page_banner.set_revealed(true);
+        self.state.borrow_mut().page_error = Some(err);
+        self.update_status();
     }
 
     /// Search + stop-on-copy: find the branch's first revision, which then
@@ -933,11 +944,11 @@ impl LogWindow {
                 }
             })),
         );
-        if let Some(old) = self.list_stack.child_by_name("error") {
-            self.list_stack.remove(&old);
+        if let Some(old) = self.content_stack.child_by_name("error") {
+            self.content_stack.remove(&old);
         }
-        self.list_stack.add_named(&page, Some("error"));
-        self.list_stack.set_visible_child_name("error");
+        self.content_stack.add_named(&page, Some("error"));
+        self.content_stack.set_visible_child_name("error");
         self.update_status();
     }
 
@@ -957,7 +968,7 @@ impl LogWindow {
                 n => format!("{} revisions loaded", group_digits(u64::from(n))),
             }
         };
-        let text = if self.list_stack.visible_child_name().as_deref() == Some("error") {
+        let text = if self.content_stack.visible_child_name().as_deref() == Some("error") {
             "Failed to load the log".to_owned()
         } else if st.page_error.is_some() {
             format!("{count} · loading failed")

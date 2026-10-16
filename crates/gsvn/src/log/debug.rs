@@ -11,7 +11,9 @@
 //! | `search:TEXT` / `range:NEW,OLD` / `stoponcopy` | set the top bar, then wait |
 //! | `select:I` / `select2:I,J` / `selectrev:R` | select rows |
 //! | `waitpaths` | until the changed paths are shown |
-//! | `filter:TEXT` | filter changed paths |
+//! | `filter:TEXT` / `selectpath:I` | filter / select changed paths |
+//! | `action:NAME` | activate `log.NAME` |
+//! | `shotnewest:PATH.png` | render the most recent other window |
 //! | `scroll:I` | scroll row I into view |
 //! | `light` / `dark` | colour scheme |
 //! | `sleep:MS`, `rss`, `shot:PATH.png`, `quit` | |
@@ -55,7 +57,10 @@ async fn sleep(ms: u64) {
 
 fn busy(win: &LogWindow) -> bool {
     let st = win.state.borrow();
-    st.page_task.is_some() || (st.pages_loaded == 0 && win.list_stack.visible_child_name().as_deref() == Some("loading"))
+    st.page_task.is_some()
+        || (st.pages_loaded == 0
+            && win.list_stack.visible_child_name().as_deref() == Some("loading")
+            && win.content_stack.visible_child_name().as_deref() != Some("error"))
 }
 
 async fn wait_idle(win: &LogWindow) {
@@ -160,6 +165,23 @@ async fn run_step(win: &Rc<LogWindow>, cmd: &str, arg: &str) {
         "shot" => {
             sleep(250).await;
             screenshot(win.window.upcast_ref(), arg);
+        }
+        "shotnewest" => {
+            // The most recently opened other window (e.g. a diff placeholder).
+            sleep(400).await;
+            let newest = win.ctx.app.windows().into_iter().find(|w| w != win.window.upcast_ref::<gtk::Window>());
+            match newest {
+                Some(w) => screenshot(w.upcast_ref(), arg),
+                None => eprintln!("[gsvn-log] no other window"),
+            }
+        }
+        "pageerror" => {
+            let mut err = svn_backend::SvnError::new(svn_backend::ErrorKind::Network, "Connection reset by peer (simulated)");
+            err.code = Some(175012);
+            win.show_page_error(err);
+        }
+        "selectpath" => {
+            win.paths_selection.set_selected(arg.parse().unwrap_or(0));
         }
         "action" => {
             let _ = WidgetExt::activate_action(&win.window, &format!("log.{arg}"), None);
