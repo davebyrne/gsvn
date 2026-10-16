@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lists>
+<list
+   path="https://svn.apache.org/repos/asf/subversion/trunk/doc">
+<entry
+   kind="file">
+<name>README</name>
+<size>1256</size>
+<commit
+   revision="1903577">
+<author>hartmannathan</author>
+<date>2022-08-19T16:31:35.591491Z</date>
+</commit>
+</entry>
+<entry
+   kind="file">
+<name>doxygen.conf</name>
+<size>62735</size>
+<commit
+   revision="1854600">
+<author>julianfoad</author>
+<date>2019-03-01T15:34:03.511925Z</date>
+</commit>
+</entry>
+<entry
+   kind="dir">
+<name>programmer</name>
+<commit
+   revision="1849200">
+<author>brane</author>
+<date>2018-12-18T17:58:31.487357Z</date>
+</commit>
+</entry>
+<entry
+   kind="file">
+<name>svn-square.jpg</name>
+<size>1440</size>
+<commit
+   revision="1663949">
+<author>brane</author>
+<date>2015-03-04T11:55:13.922259Z</date>
+</commit>
+</entry>
+<entry
+   kind="dir">
+<name>user</name>
+<commit
+   revision="1903577">
+<author>hartmannathan</author>
+<date>2022-08-19T16:31:35.591491Z</date>
+</commit>
+</entry>
+</list>
+</lists>

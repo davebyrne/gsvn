@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lists>
+<list
+   path="file:///tmp/gsvn-fixture/repo/branches">
+<entry
+   kind="dir">
+<name>feature-1</name>
+<commit
+   revision="5">
+<author>alice</author>
+<date>2026-05-06T07:08:09.100000Z</date>
+</commit>
+</entry>
+</list>
+<list
+   path="file:///tmp/gsvn-fixture/repo/tags">
+</list>
+<list
+   path="file:///tmp/gsvn-fixture/repo/trunk/sub%20dir">
+<entry
+   kind="file">
+<name>nested.txt</name>
+<size>7</size>
+<commit
+   revision="2">
+<author>bob</author>
+<date>2026-02-03T04:05:06.789012Z</date>
+</commit>
+</entry>
+</list>
+</lists>

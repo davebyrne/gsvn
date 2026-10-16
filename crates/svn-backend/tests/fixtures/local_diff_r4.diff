@@ -1,0 +1,30 @@
+Index: trunk/hello.txt
+===================================================================
+--- trunk/hello.txt	(revision 3)
++++ trunk/hello.txt	(revision 4)
+
+Property changes on: trunk/hello.txt
+___________________________________________________________________
+Added: my:binary
+## -0,0 +1 ##
++binary
+\ No newline at end of property
+Added: my:multi
+## -0,0 +1,2 ##
++line one
++line two
+Added: my:prop
+## -0,0 +1 ##
++single value
+\ No newline at end of property
+Index: trunk
+===================================================================
+--- trunk	(revision 3)
++++ trunk	(revision 4)
+
+Property changes on: trunk
+___________________________________________________________________
+Added: svn:ignore
+## -0,0 +1,2 ##
++*.o
++*.tmp

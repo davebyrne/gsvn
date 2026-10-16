@@ -1,0 +1,10 @@
+Index: trunk
+===================================================================
+--- trunk	(revision 7)
++++ trunk	(revision 8)
+
+Property changes on: trunk
+___________________________________________________________________
+Added: svn:mergeinfo
+## -0,0 +0,1 ##
+   Merged /branches/feature-1:r7

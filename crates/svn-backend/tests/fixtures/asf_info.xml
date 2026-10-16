@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<info>
+<entry
+   path="trunk"
+   revision="1939142"
+   kind="dir">
+<url>https://svn.apache.org/repos/asf/subversion/trunk</url>
+<relative-url>^/subversion/trunk</relative-url>
+<repository>
+<root>https://svn.apache.org/repos/asf</root>
+<uuid>13f79535-47bb-0310-9956-ffa450edef68</uuid>
+</repository>
+<commit
+   revision="1939086">
+<author>kotkov</author>
+<date>2026-10-13T09:35:07.729908Z</date>
+</commit>
+</entry>
+</info>

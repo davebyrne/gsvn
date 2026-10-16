@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<blame>
+<target
+   path="file:///tmp/gsvn-fixture/repo/trunk/hello.txt">
+<entry
+   line-number="1">
+<commit
+   revision="2">
+<author>bob</author>
+<date>2026-02-03T04:05:06.789012Z</date>
+</commit>
+</entry>
+<entry
+   line-number="2">
+<commit
+   revision="2">
+<author>bob</author>
+<date>2026-02-03T04:05:06.789012Z</date>
+</commit>
+</entry>
+<entry
+   line-number="3">
+<commit
+   revision="3">
+<author>carol</author>
+<date>2026-03-04T05:06:07.000000Z</date>
+</commit>
+</entry>
+<entry
+   line-number="4">
+<commit
+   revision="2">
+<author>bob</author>
+<date>2026-02-03T04:05:06.789012Z</date>
+</commit>
+</entry>
+<entry
+   line-number="5">
+<commit
+   revision="2">
+<author>bob</author>
+<date>2026-02-03T04:05:06.789012Z</date>
+</commit>
+</entry>
+<entry
+   line-number="6">
+<commit
+   revision="2">
+<author>bob</author>
+<date>2026-02-03T04:05:06.789012Z</date>
+</commit>
+</entry>
+<entry
+   line-number="7">
+<commit
+   revision="2">
+<author>bob</author>
+<date>2026-02-03T04:05:06.789012Z</date>
+</commit>
+</entry>
+<entry
+   line-number="8">
+<commit
+   revision="2">
+<author>bob</author>
+<date>2026-02-03T04:05:06.789012Z</date>
+</commit>
+</entry>
+<entry
+   line-number="9">
+<commit
+   revision="2">
+<author>bob</author>
+<date>2026-02-03T04:05:06.789012Z</date>
+</commit>
+</entry>
+<entry
+   line-number="10">
+<commit
+   revision="2">
+<author>bob</author>
+<date>2026-02-03T04:05:06.789012Z</date>
+</commit>
+</entry>
+<entry
+   line-number="11">
+<commit
+   revision="2">
+<author>bob</author>
+<date>2026-02-03T04:05:06.789012Z</date>
+</commit>
+</entry>
+<entry
+   line-number="12">
+<commit
+   revision="2">
+<author>bob</author>
+<date>2026-02-03T04:05:06.789012Z</date>
+</commit>
+</entry>
+<entry
+   line-number="13">
+<commit
+   revision="2">
+<author>bob</author>
+<date>2026-02-03T04:05:06.789012Z</date>
+</commit>
+</entry>
+<entry
+   line-number="14">
+<commit
+   revision="2">
+<author>bob</author>
+<date>2026-02-03T04:05:06.789012Z</date>
+</commit>
+</entry>
+<entry
+   line-number="15">
+<commit
+   revision="2">
+<author>bob</author>
+<date>2026-02-03T04:05:06.789012Z</date>
+</commit>
+</entry>
+<entry
+   line-number="16">
+<commit
+   revision="2">
+<author>bob</author>
+<date>2026-02-03T04:05:06.789012Z</date>
+</commit>
+</entry>
+<entry
+   line-number="17">
+<commit
+   revision="2">
+<author>bob</author>
+<date>2026-02-03T04:05:06.789012Z</date>
+</commit>
+</entry>
+<entry
+   line-number="18">
+<commit
+   revision="2">
+<author>bob</author>
+<date>2026-02-03T04:05:06.789012Z</date>
+</commit>
+</entry>
+<entry
+   line-number="19">
+<commit
+   revision="2">
+<author>bob</author>
+<date>2026-02-03T04:05:06.789012Z</date>
+</commit>
+</entry>
+<entry
+   line-number="20">
+<commit
+   revision="2">
+<author>bob</author>
+<date>2026-02-03T04:05:06.789012Z</date>
+</commit>
+</entry>
+<entry
+   line-number="21">
+<commit
+   revision="2">
+<author>bob</author>
+<date>2026-02-03T04:05:06.789012Z</date>
+</commit>
+</entry>
+<entry
+   line-number="22">
+<commit
+   revision="2">
+<author>bob</author>
+<date>2026-02-03T04:05:06.789012Z</date>
+</commit>
+</entry>
+<entry
+   line-number="23">
+<commit
+   revision="2">
+<author>bob</author>
+<date>2026-02-03T04:05:06.789012Z</date>
+</commit>
+</entry>
+<entry
+   line-number="24">
+<commit
+   revision="2">
+<author>bob</author>
+<date>2026-02-03T04:05:06.789012Z</date>
+</commit>
+</entry>
+<entry
+   line-number="25">
+<commit
+   revision="3">
+<author>carol</author>
+<date>2026-03-04T05:06:07.000000Z</date>
+</commit>
+</entry>
+<entry
+   line-number="26">
+<commit
+   revision="2">
+<author>bob</author>
+<date>2026-02-03T04:05:06.789012Z</date>
+</commit>
+</entry>
+<entry
+   line-number="27">
+<commit
+   revision="2">
+<author>bob</author>
+<date>2026-02-03T04:05:06.789012Z</date>
+</commit>
+</entry>
+<entry
+   line-number="28">
+<commit
+   revision="2">
+<author>bob</author>
+<date>2026-02-03T04:05:06.789012Z</date>
+</commit>
+</entry>
+<entry
+   line-number="29">
+<commit
+   revision="2">
+<author>bob</author>
+<date>2026-02-03T04:05:06.789012Z</date>
+</commit>
+</entry>
+</target>
+</blame>
