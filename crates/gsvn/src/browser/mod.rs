@@ -65,6 +65,10 @@ struct State {
     context: Option<EntryObject>,
     /// The tree selection is being changed programmatically.
     syncing_tree: bool,
+    /// The user scrolled, clicked or typed in the file list since the
+    /// last navigation. Until then the list is kept scrolled to the top
+    /// while batches arrive (directories sort first but arrive last).
+    list_touched: bool,
 }
 
 struct Browser {
@@ -304,6 +308,7 @@ impl Browser {
                 info_token: None,
                 context: None,
                 syncing_tree: false,
+                list_touched: false,
             }),
             opened: Cell::new(Some(std::time::Instant::now())),
         });
@@ -376,12 +381,56 @@ impl Browser {
             });
         }
         {
+            // Any interaction with the list stops `keep_top`.
+            let weak = Rc::downgrade(self);
+            let touched = move || {
+                if let Some(this) = weak.upgrade() {
+                    this.state.borrow_mut().list_touched = true;
+                }
+            };
+            let scroll = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::BOTH_AXES);
+            let t = touched.clone();
+            scroll.connect_scroll(move |_, _, _| {
+                t();
+                glib::Propagation::Proceed
+            });
+            scroll.set_propagation_phase(gtk::PropagationPhase::Capture);
+            self.files.scrolled.add_controller(scroll);
+            let click = gtk::GestureClick::builder()
+                .button(0)
+                .propagation_phase(gtk::PropagationPhase::Capture)
+                .build();
+            let t = touched.clone();
+            click.connect_pressed(move |_, _, _, _| t());
+            self.files.scrolled.add_controller(click);
+            let keys = gtk::EventControllerKey::new();
+            keys.set_propagation_phase(gtk::PropagationPhase::Capture);
+            keys.connect_key_pressed(move |_, _, _, _| {
+                touched();
+                glib::Propagation::Proceed
+            });
+            self.files.scrolled.add_controller(keys);
+        }
+        {
             let f = with(|this| this.on_tree_selection());
             self.tree.selection.connect_selection_changed(move |_, _, _| f());
         }
         {
             let f = with(|this| this.update_status());
             self.files.filter_model.connect_items_changed(move |_, _, _, _| f());
+        }
+        {
+            let weak = Rc::downgrade(self);
+            self.files.sort_model.connect_pending_notify(move |model| {
+                if model.pending() == 0
+                    && let Some(this) = weak.upgrade()
+                    && let Some(dir) = this.current_dir()
+                    && dir.is_done()
+                    && let Some(t) = dir.started.get()
+                {
+                    glib::g_debug!(LOG_DOMAIN, "sorted {} items, {:?} after listing start", model.n_items(), t.elapsed());
+                }
+            });
         }
         {
             let f = with(|this| {
@@ -821,6 +870,7 @@ impl Browser {
                 st.history.replace(loc.clone());
             }
             st.loc = Some(loc.clone());
+            st.list_touched = select.is_some();
             st.pending_select = select;
         }
         self.pathbar.set_location(&cache.root, &loc.url);
@@ -1036,6 +1086,7 @@ impl Browser {
                     );
                 }
                 self.list_stack.set_visible_child_name("list");
+                self.keep_top();
                 self.select_pending();
             }
             LoadState::Failed(err) if err.kind == ErrorKind::NotFound => {
@@ -1068,10 +1119,18 @@ impl Browser {
             }
             LoadState::Loading | LoadState::Idle | LoadState::Cancelled => {
                 self.list_stack.set_visible_child_name("list");
+                self.keep_top();
             }
         }
         self.update_status();
         self.update_actions();
+    }
+
+    /// Keep an untouched list at the top while it fills.
+    fn keep_top(&self) {
+        if !self.state.borrow().list_touched && self.files.sort_model.n_items() > 0 {
+            self.files.view.scroll_to(0, None::<&gtk::ColumnViewColumn>, gtk::ListScrollFlags::NONE, None);
+        }
     }
 
     fn select_pending(self: &Rc<Self>) {

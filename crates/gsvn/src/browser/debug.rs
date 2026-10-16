@@ -72,6 +72,15 @@ fn run(b: &Rc<Browser>, cmd: &str) {
             b.tree.selection.set_selected(pos);
         }
         "revpopover" => b.rev_button.popup(),
+        "dump" => {
+            let n = b.files.sort_model.n_items();
+            let pending = b.files.sort_model.pending();
+            let first: Vec<String> = (0..n.min(arg.parse().unwrap_or(5)))
+                .filter_map(|i| b.files.item(i))
+                .map(|e| format!("{}{}", e.name(), if e.is_dir() { "/" } else { "" }))
+                .collect();
+            eprintln!("dump: {n} items, {pending} pending sort: {first:?}");
+        }
         _ => eprintln!("GSVN_BROWSER_SCRIPT: unknown command {cmd}"),
     }
 }

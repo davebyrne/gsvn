@@ -21,6 +21,10 @@ pub enum LoadState {
     Failed(SvnError),
 }
 
+/// Main-loop time spent appending batches before pausing for [`BATCH_PAUSE`].
+const BATCH_SLICE: Duration = Duration::from_millis(12);
+const BATCH_PAUSE: Duration = Duration::from_millis(4);
+
 /// Called after every change of a model's contents or state.
 pub type Listener = Rc<dyn Fn(&Rc<DirModel>)>;
 
@@ -113,8 +117,14 @@ impl DirModel {
 
         let weak = Rc::downgrade(self);
         glib::spawn_future_local(async move {
+            let mut slice = Instant::now();
             loop {
+                let wait = Instant::now();
                 let item = stream.next().await;
+                if wait.elapsed() >= BATCH_PAUSE {
+                    // The main loop was free while waiting.
+                    slice = Instant::now();
+                }
                 let Some(this) = weak.upgrade() else { return };
                 if this.generation.get() != generation {
                     return;
@@ -123,8 +133,15 @@ impl DirModel {
                     Some(Ok(batch)) => {
                         this.append(batch);
                         drop(this);
-                        // Let GTK draw between batches (DESIGN.md §5.2).
-                        glib::timeout_future_with_priority(glib::Priority::DEFAULT_IDLE, Duration::ZERO).await;
+                        // When batches queue up, appending them back to back
+                        // would block drawing: after a time slice, pause
+                        // briefly so the frame clock can run (DESIGN.md §5.2).
+                        // A pause at idle priority could starve while GTK is
+                        // busy, so it is a short timeout instead.
+                        if slice.elapsed() >= BATCH_SLICE {
+                            glib::timeout_future(BATCH_PAUSE).await;
+                            slice = Instant::now();
+                        }
                     }
                     Some(Err(err)) => return this.finish(Err(err)),
                     None => return this.finish(Ok(())),
