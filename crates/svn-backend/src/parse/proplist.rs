@@ -44,8 +44,7 @@ pub(super) fn parse<R: BufRead>(r: R) -> Result<Vec<Property>, ParseError> {
                 cur = Some((name, b64));
             }
             Ev::End {
-                tag: Tag::Property,
-                ..
+                tag: Tag::Property, ..
             } => {
                 if let Some((name, b64)) = cur.take() {
                     let raw = p.take_text();

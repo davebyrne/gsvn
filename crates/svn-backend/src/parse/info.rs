@@ -12,7 +12,7 @@
 //! </info>
 //! ```
 
-use super::xml::{Ev, Tag, XmlParser, attr, non_empty, parse_date, parse_u64};
+use super::xml::{Ev, Tag, XmlParser, attr, attr_with, non_empty, parse_date, parse_u64};
 use super::{ParseError, parse_kind};
 use crate::model::*;
 use crate::url::{RepoUrl, decode};
@@ -42,14 +42,14 @@ pub(super) fn parse<R: BufRead>(r: R) -> Result<Vec<Info>, ParseError> {
                 (Tag::Entry, Tag::Info) => {
                     cur = Some(Acc {
                         kind: attr(&elem, "kind")?,
-                        size: attr(&elem, "size")?.as_deref().and_then(parse_u64),
-                        rev: attr(&elem, "revision")?.as_deref().and_then(parse_u64),
+                        size: attr_with(&elem, "size", parse_u64)?,
+                        rev: attr_with(&elem, "revision", parse_u64)?,
                         ..Acc::default()
                     });
                 }
                 (Tag::Commit, Tag::Entry) => {
                     if let Some(c) = cur.as_mut() {
-                        c.commit_rev = attr(&elem, "revision")?.as_deref().and_then(parse_u64);
+                        c.commit_rev = attr_with(&elem, "revision", parse_u64)?;
                     }
                 }
                 _ => {}
@@ -63,8 +63,12 @@ pub(super) fn parse<R: BufRead>(r: R) -> Result<Vec<Info>, ParseError> {
                     (Tag::RelativeUrl, Tag::Entry) => {
                         cur.as_mut().unwrap().relative_url = Some(p.take_text())
                     }
-                    (Tag::Root, Tag::Repository) => cur.as_mut().unwrap().root = Some(p.take_text()),
-                    (Tag::Uuid, Tag::Repository) => cur.as_mut().unwrap().uuid = Some(p.take_text()),
+                    (Tag::Root, Tag::Repository) => {
+                        cur.as_mut().unwrap().root = Some(p.take_text())
+                    }
+                    (Tag::Uuid, Tag::Repository) => {
+                        cur.as_mut().unwrap().uuid = Some(p.take_text())
+                    }
                     (Tag::Author, Tag::Commit) => {
                         cur.as_mut().unwrap().author = non_empty(p.take_text())
                     }

@@ -19,7 +19,7 @@
 //! `<logentry>`s (from `-g`) are skipped. A `<path>` with an unknown
 //! `action` is skipped.
 
-use super::xml::{Ev, Tag, XmlParser, attr, non_empty, parse_date, parse_u64};
+use super::xml::{Ev, Tag, XmlParser, attr_with, each_attr, non_empty, parse_date, parse_u64};
 use super::{ParseError, parse_kind};
 use crate::model::*;
 use std::io::BufRead;
@@ -46,8 +46,7 @@ pub(super) fn parse<R: BufRead>(r: R, mut emit: impl FnMut(LogEntry)) -> Result<
                 Tag::LogEntry => {
                     depth += 1;
                     if depth == 1 && parent == Tag::Log {
-                        let Some(rev) = attr(&elem, "revision")?.as_deref().and_then(parse_u64)
-                        else {
+                        let Some(rev) = attr_with(&elem, "revision", parse_u64)? else {
                             return Err(p.error("<logentry> without a valid revision"));
                         };
                         cur = Some(LogEntry {
@@ -60,14 +59,24 @@ pub(super) fn parse<R: BufRead>(r: R, mut emit: impl FnMut(LogEntry)) -> Result<
                     }
                 }
                 Tag::Path if parent == Tag::Paths && depth == 1 => {
-                    path_attrs = Some(PathAttrs {
-                        action: attr(&elem, "action")?.as_deref().and_then(parse_action),
-                        kind: parse_kind(attr(&elem, "kind")?.as_deref()),
-                        copy_path: attr(&elem, "copyfrom-path")?,
-                        copy_rev: attr(&elem, "copyfrom-rev")?.as_deref().and_then(parse_u64),
-                        text_mods: attr(&elem, "text-mods")?.as_deref() == Some("true"),
-                        prop_mods: attr(&elem, "prop-mods")?.as_deref() == Some("true"),
-                    });
+                    let mut a = PathAttrs {
+                        action: None,
+                        kind: None,
+                        copy_path: None,
+                        copy_rev: None,
+                        text_mods: false,
+                        prop_mods: false,
+                    };
+                    each_attr(&elem, |k, v| match k {
+                        "action" => a.action = parse_action(v),
+                        "kind" => a.kind = parse_kind(Some(v)),
+                        "copyfrom-path" => a.copy_path = Some(v.to_owned()),
+                        "copyfrom-rev" => a.copy_rev = parse_u64(v),
+                        "text-mods" => a.text_mods = v == "true",
+                        "prop-mods" => a.prop_mods = v == "true",
+                        _ => {}
+                    })?;
+                    path_attrs = Some(a);
                 }
                 _ => {}
             },

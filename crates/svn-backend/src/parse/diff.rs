@@ -3,8 +3,8 @@
 //! ```text
 //! Index: trunk/hello.txt
 //! ===================================================================
-//! --- trunk/hello.txt	(revision 2)
-//! +++ trunk/hello.txt	(revision 3)
+//! --- trunk/hello.txt<TAB>(revision 2)
+//! +++ trunk/hello.txt<TAB>(revision 3)
 //! @@ -1,6 +1,6 @@ optional section
 //!  context
 //! -removed
@@ -74,7 +74,10 @@ struct State {
     old_style: bool,
 }
 
-pub(super) fn parse<R: BufRead>(mut r: R, mut emit: impl FnMut(FileDiff)) -> Result<(), ParseError> {
+pub(super) fn parse<R: BufRead>(
+    mut r: R,
+    mut emit: impl FnMut(FileDiff),
+) -> Result<(), ParseError> {
     let mut buf = Vec::with_capacity(256);
     let mut st = State::default();
     loop {
@@ -291,7 +294,7 @@ impl State {
         let Some(p) = self.current_prop() else {
             return;
         };
-        let push =|v: &mut Option<String>| {
+        let push = |v: &mut Option<String>| {
             let s = v.get_or_insert_with(String::new);
             if continuation {
                 s.push('\n');
@@ -383,7 +386,11 @@ impl State {
 
     fn start_old_style(&mut self, side: Side, v: &[u8]) {
         if let Some(p) = self.current_prop() {
-            let slot = if side == Side::Old { &mut p.old } else { &mut p.new };
+            let slot = if side == Side::Old {
+                &mut p.old
+            } else {
+                &mut p.new
+            };
             *slot = Some(lossy(v));
             self.prop_side = Some(side);
             self.old_style = true;

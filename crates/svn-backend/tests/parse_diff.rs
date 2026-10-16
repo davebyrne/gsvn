@@ -1,9 +1,9 @@
 mod common;
 
+use DiffLineKind::*;
 use common::*;
 use svn_backend::parse;
 use svn_backend::*;
-use DiffLineKind::*;
 
 fn diff_bytes(b: &[u8]) -> Vec<FileDiff> {
     let mut v = Vec::new();
@@ -98,7 +98,11 @@ fn diff_r2_adds() {
     assert_eq!(b.old_label, None);
     assert_eq!(
         b.prop_changes,
-        [prop("svn:mime-type", None, Some("application/octet-stream"))]
+        [prop(
+            "svn:mime-type",
+            None,
+            Some("application/octet-stream")
+        )]
     );
 
     // CRLF: the \r is stripped from the text.
@@ -134,7 +138,10 @@ fn diff_r2_adds() {
     );
 
     let h = &hunks(&v[7])[0];
-    assert_eq!((h.old_start, h.old_len, h.new_start, h.new_len), (0, 0, 1, 30));
+    assert_eq!(
+        (h.old_start, h.old_len, h.new_start, h.new_len),
+        (0, 0, 1, 30)
+    );
     assert_eq!(h.lines.len(), 30);
     assert_eq!(h.lines[29], add(30, "line 30"));
 
@@ -161,11 +168,22 @@ fn diff_r3_modifications() {
     assert_eq!(v[0].content, DiffContent::Binary);
     assert!(v[0].prop_changes.is_empty());
 
-    assert_eq!(v[1].old_label.as_deref(), Some("trunk/crlf.txt\t(revision 2)"));
-    assert_eq!(v[1].new_label.as_deref(), Some("trunk/crlf.txt\t(revision 3)"));
+    assert_eq!(
+        v[1].old_label.as_deref(),
+        Some("trunk/crlf.txt\t(revision 2)")
+    );
+    assert_eq!(
+        v[1].new_label.as_deref(),
+        Some("trunk/crlf.txt\t(revision 3)")
+    );
     assert_eq!(
         hunks(&v[1])[0].lines,
-        [ctx(1, 1, "one"), del(2, "two"), add(2, "TWO"), ctx(3, 3, "three")]
+        [
+            ctx(1, 1, "one"),
+            del(2, "two"),
+            add(2, "TWO"),
+            ctx(3, 3, "three")
+        ]
     );
 
     assert_eq!(
@@ -206,7 +224,10 @@ fn diff_r3_modifications() {
             ctx(6, 6, "line 6"),
         ]
     );
-    assert_eq!((h[1].old_start, h[1].old_len, h[1].new_start, h[1].new_len), (22, 9, 22, 8));
+    assert_eq!(
+        (h[1].old_start, h[1].old_len, h[1].new_start, h[1].new_len),
+        (22, 9, 22, 8)
+    );
     assert_eq!(
         h[1].lines,
         [
@@ -225,7 +246,11 @@ fn diff_r3_modifications() {
 
     assert_eq!(
         hunks(&v[4])[0].lines,
-        [ctx(1, 1, "caf\u{FFFD}"), del(2, "na\u{FFFD}ve"), add(2, "na\u{FFFD}ve!")]
+        [
+            ctx(1, 1, "caf\u{FFFD}"),
+            del(2, "na\u{FFFD}ve"),
+            add(2, "na\u{FFFD}ve!")
+        ]
     );
 
     assert_eq!(
@@ -284,9 +309,17 @@ fn diff_r6_delete_replace_props() {
     let paths: Vec<&str> = v.iter().map(|f| f.path.as_str()).collect();
     assert_eq!(
         paths,
-        ["trunk/a b.txt", "trunk/amp&co.txt", "trunk/hello.txt", "trunk/new-empty.txt"]
+        [
+            "trunk/a b.txt",
+            "trunk/amp&co.txt",
+            "trunk/hello.txt",
+            "trunk/new-empty.txt"
+        ]
     );
-    assert_eq!(v[0].new_label.as_deref(), Some("trunk/a b.txt\t(nonexistent)"));
+    assert_eq!(
+        v[0].new_label.as_deref(),
+        Some("trunk/a b.txt\t(nonexistent)")
+    );
     assert_eq!(
         hunks(&v[0]),
         [Hunk {
@@ -337,7 +370,10 @@ fn diff_range_and_empty() {
     assert_eq!(v.len(), 12);
     let dot = v.last().unwrap();
     assert_eq!(dot.path, ".");
-    assert_eq!(dot.prop_changes, [prop("svn:ignore", None, Some("*.o\n*.tmp\n"))]);
+    assert_eq!(
+        dot.prop_changes,
+        [prop("svn:ignore", None, Some("*.o\n*.tmp\n"))]
+    );
     let hello = v.iter().find(|f| f.path == "hello.txt").unwrap();
     assert_eq!(hunks(hello)[0].lines.len(), 29);
     assert_eq!(
@@ -364,12 +400,18 @@ fn diff_asf() {
     );
     let h = hunks(f);
     assert_eq!(h.len(), 1);
-    assert_eq!((h[0].old_start, h[0].old_len, h[0].new_start, h[0].new_len), (104, 10, 104, 11));
+    assert_eq!(
+        (h[0].old_start, h[0].old_len, h[0].new_start, h[0].new_len),
+        (104, 10, 104, 11)
+    );
     assert_eq!(h[0].lines.len(), 12);
     assert_eq!(h[0].lines[0], ctx(104, 104, ""));
     assert_eq!(
         h[0].lines[3],
-        del(107, "      char *errstr = apr_palloc(logger->pool, errstr_size);")
+        del(
+            107,
+            "      char *errstr = apr_palloc(logger->pool, errstr_size);"
+        )
     );
     assert_eq!(h[0].lines[4], add(107, "      char *errstr;"));
     assert_eq!(
@@ -469,7 +511,11 @@ trailing garbage\n";
         v[1].prop_changes,
         [
             prop("svn:eol-style", Some("native"), Some("CRLF")),
-            prop("svn:mergeinfo", Some(""), Some("  Merged /branches/x:r3-5\n")),
+            prop(
+                "svn:mergeinfo",
+                Some(""),
+                Some("  Merged /branches/x:r3-5\n")
+            ),
         ]
     );
     assert_eq!(v[2].path, "old.bin");
@@ -477,7 +523,11 @@ trailing garbage\n";
     assert_eq!(
         v[2].prop_changes,
         [
-            prop("svn:mime-type", Some("text/plain"), Some("application/octet-stream")),
+            prop(
+                "svn:mime-type",
+                Some("text/plain"),
+                Some("application/octet-stream")
+            ),
             prop("multi", None, Some("first\nsecond")),
             prop("gone", Some("bye\ntrailing garbage"), None),
         ]

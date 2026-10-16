@@ -26,7 +26,11 @@ fn blame_full() {
     };
     for (i, l) in v.iter().enumerate() {
         assert_eq!(l.line_no, i as u64 + 1);
-        let want = if l.line_no == 3 || l.line_no == 25 { &carol } else { &bob };
+        let want = if l.line_no == 3 || l.line_no == 25 {
+            &carol
+        } else {
+            &bob
+        };
         assert_eq!(l.commit.as_ref(), Some(want), "line {}", l.line_no);
     }
 }
@@ -48,7 +52,10 @@ fn blame_range_has_lines_without_commit() {
         .map(|l| l.line_no)
         .collect();
     assert_eq!(with, [3, 25]);
-    assert_eq!(v[2].commit.as_ref().unwrap().author.as_deref(), Some("carol"));
+    assert_eq!(
+        v[2].commit.as_ref().unwrap().author.as_deref(),
+        Some("carol")
+    );
 }
 
 #[test]
@@ -87,7 +94,13 @@ fn blame_errors_and_tolerance() {
             })
         }]
     );
-    assert!(parse::blame("<blame><target><entry></entry></target></blame>".as_bytes(), |_| {}).is_err());
+    assert!(
+        parse::blame(
+            "<blame><target><entry></entry></target></blame>".as_bytes(),
+            |_| {}
+        )
+        .is_err()
+    );
     assert!(parse::blame("<blame><target>".as_bytes(), |_| {}).is_err());
 }
 
@@ -100,7 +113,9 @@ fn props(name: &str) -> Vec<(String, String)> {
 }
 
 fn pairs(v: &[(&str, &str)]) -> Vec<(String, String)> {
-    v.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect()
+    v.iter()
+        .map(|(a, b)| (a.to_string(), b.to_string()))
+        .collect()
 }
 
 #[test]
@@ -149,5 +164,10 @@ fn proplist_escapes_and_bad_base64() {
             },
         ]
     );
-    assert!(parse::proplist("<properties><target><property>x</property></target></properties>".as_bytes()).is_err());
+    assert!(
+        parse::proplist(
+            "<properties><target><property>x</property></target></properties>".as_bytes()
+        )
+        .is_err()
+    );
 }

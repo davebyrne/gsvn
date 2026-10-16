@@ -74,7 +74,10 @@ fn info_asf() {
     let v = parse::info(fixture("asf_info.xml")).unwrap();
     assert_eq!(v.len(), 1);
     let i = &v[0];
-    assert_eq!(i.url.as_str(), "https://svn.apache.org/repos/asf/subversion/trunk");
+    assert_eq!(
+        i.url.as_str(),
+        "https://svn.apache.org/repos/asf/subversion/trunk"
+    );
     assert_eq!(i.root.as_str(), "https://svn.apache.org/repos/asf");
     assert_eq!(i.uuid, "13f79535-47bb-0310-9956-ffa450edef68");
     assert_eq!(i.repos_path, "/subversion/trunk");

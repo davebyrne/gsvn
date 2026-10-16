@@ -49,6 +49,24 @@ pub(super) enum Tag {
 }
 
 impl Tag {
+    /// Leaf elements whose text content a parser reads.
+    fn has_text(self) -> bool {
+        matches!(
+            self,
+            Tag::Url
+                | Tag::RelativeUrl
+                | Tag::Root
+                | Tag::Uuid
+                | Tag::Author
+                | Tag::Date
+                | Tag::Name
+                | Tag::Size
+                | Tag::Path
+                | Tag::Msg
+                | Tag::Property
+        )
+    }
+
     fn from_name(name: &str) -> Tag {
         match name {
             "info" => Tag::Info,
@@ -88,7 +106,10 @@ pub(super) enum Ev<'b> {
     },
     /// Element closed. Its text content is available via [`XmlParser::text`]
     /// / [`XmlParser::take_text`] until the next call to `next`.
-    End { tag: Tag, parent: Tag },
+    End {
+        tag: Tag,
+        parent: Tag,
+    },
     /// Text, comments, declarations: nothing for the caller to do.
     Other,
     Eof,
@@ -101,6 +122,9 @@ pub(super) struct XmlParser<R: BufRead> {
     text: String,
     what: &'static str,
     seen_root: bool,
+    /// The current element has text content we care about (see
+    /// [`Tag::has_text`]); text in container elements is dropped.
+    capture: bool,
 }
 
 impl<R: BufRead> XmlParser<R> {
@@ -118,6 +142,7 @@ impl<R: BufRead> XmlParser<R> {
             text: String::new(),
             what,
             seen_root: false,
+            capture: false,
         }
     }
 
@@ -135,8 +160,12 @@ impl<R: BufRead> XmlParser<R> {
         &self.text
     }
 
+    /// Copy of the text (exactly sized); the internal buffer keeps its
+    /// capacity so the next element's text doesn't reallocate.
     pub(super) fn take_text(&mut self) -> String {
-        std::mem::take(&mut self.text)
+        let s = self.text.as_str().to_owned();
+        self.text.clear();
+        s
     }
 
     /// Next structural event. Text, references, comments etc. are folded
@@ -167,19 +196,26 @@ impl<R: BufRead> XmlParser<R> {
                 }
                 self.stack.push(tag);
                 self.text.clear();
+                self.capture = tag.has_text();
                 Ok(Ev::Start { tag, parent, elem })
             }
             Event::End(_) => {
+                // Back in a container element: its whitespace isn't needed.
+                self.capture = false;
                 let tag = self.stack.pop().unwrap_or(Tag::None);
                 let parent = self.stack.last().copied().unwrap_or(Tag::None);
                 Ok(Ev::End { tag, parent })
             }
             Event::Text(t) => {
-                self.text.push_str(&t.xml10_content());
+                if self.capture {
+                    self.text.push_str(&t.xml10_content());
+                }
                 Ok(Ev::Other)
             }
             Event::CData(c) => {
-                self.text.push_str(&c);
+                if self.capture {
+                    self.text.push_str(&c);
+                }
                 Ok(Ev::Other)
             }
             Event::GeneralRef(r) => {
@@ -192,7 +228,9 @@ impl<R: BufRead> XmlParser<R> {
                     self.text.push_str(s);
                 } else {
                     let name: &str = &r;
-                    return Err(ParseError(format!("{what} output: unknown entity &{name};")));
+                    return Err(ParseError(format!(
+                        "{what} output: unknown entity &{name};"
+                    )));
                 }
                 Ok(Ev::Other)
             }
@@ -219,16 +257,41 @@ impl<R: BufRead> XmlParser<R> {
 
 /// Value of attribute `key` (unescaped), if present.
 pub(super) fn attr(elem: &BytesStart<'_>, key: &str) -> Result<Option<String>, ParseError> {
-    for a in elem.attributes() {
+    attr_with(elem, key, |s| Some(s.to_owned()))
+}
+
+/// Attribute `key` (unescaped) mapped through `f` without allocating an
+/// owned copy. `None` if absent or if `f` returns `None`.
+pub(super) fn attr_with<T>(
+    elem: &BytesStart<'_>,
+    key: &str,
+    f: impl FnOnce(&str) -> Option<T>,
+) -> Result<Option<T>, ParseError> {
+    for a in elem.attributes().with_checks(false) {
         let a = a.map_err(|e| ParseError(format!("malformed attribute: {e}")))?;
         if a.key.local_name().as_ref() == key {
             let v = a
                 .normalized_value(XmlVersion::Implicit1_0)
                 .map_err(|e| ParseError(format!("bad attribute value for {key}: {e}")))?;
-            return Ok(Some(v.into_owned()));
+            return Ok(f(&v));
         }
     }
     Ok(None)
+}
+
+/// Call `f(key, unescaped_value)` for every attribute (single pass).
+pub(super) fn each_attr(
+    elem: &BytesStart<'_>,
+    mut f: impl FnMut(&str, &str),
+) -> Result<(), ParseError> {
+    for a in elem.attributes().with_checks(false) {
+        let a = a.map_err(|e| ParseError(format!("malformed attribute: {e}")))?;
+        let v = a
+            .normalized_value(XmlVersion::Implicit1_0)
+            .map_err(|e| ParseError(format!("bad attribute value: {e}")))?;
+        f(a.key.local_name().as_ref(), &v);
+    }
+    Ok(())
 }
 
 pub(super) fn parse_u64(s: &str) -> Option<u64> {

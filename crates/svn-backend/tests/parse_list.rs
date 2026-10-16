@@ -70,7 +70,10 @@ fn list_multiple_lists() {
     assert_eq!(v.len(), 2);
     assert_eq!(v[0].name, "feature-1");
     assert_eq!(v[0].kind, NodeKind::Dir);
-    assert_eq!(v[0].last_changed, commit(5, "alice", "2026-05-06T07:08:09.1Z"));
+    assert_eq!(
+        v[0].last_changed,
+        commit(5, "alice", "2026-05-06T07:08:09.1Z")
+    );
     assert_eq!(v[1].name, "nested.txt");
     assert_eq!(v[1].size, Some(7));
 }

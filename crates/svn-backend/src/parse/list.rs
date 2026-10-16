@@ -17,7 +17,7 @@
 //! Entries of all `<list>`s are emitted in document order. A bare `<list>`
 //! root (without `<lists>`) is accepted too.
 
-use super::xml::{Ev, Tag, XmlParser, attr, non_empty, parse_date, parse_u64};
+use super::xml::{Ev, Tag, XmlParser, attr_with, non_empty, parse_date, parse_u64};
 use super::{ParseError, parse_kind};
 use crate::model::*;
 use std::io::BufRead;
@@ -36,9 +36,8 @@ pub(super) fn parse<R: BufRead>(r: R, mut emit: impl FnMut(Entry)) -> Result<(),
         match p.next()? {
             Ev::Start { tag, parent, elem } => match (tag, parent) {
                 (Tag::Entry, Tag::List) => {
-                    let kind = attr(&elem, "kind")?;
                     cur = Some(Acc {
-                        kind: parse_kind(kind.as_deref()),
+                        kind: attr_with(&elem, "kind", |s| parse_kind(Some(s)))?,
                         name: None,
                         size: None,
                         commit: CommitInfo {
@@ -50,10 +49,7 @@ pub(super) fn parse<R: BufRead>(r: R, mut emit: impl FnMut(Entry)) -> Result<(),
                 }
                 (Tag::Commit, Tag::Entry) => {
                     if let Some(c) = cur.as_mut() {
-                        c.commit.rev = attr(&elem, "revision")?
-                            .as_deref()
-                            .and_then(parse_u64)
-                            .unwrap_or(0);
+                        c.commit.rev = attr_with(&elem, "revision", parse_u64)?.unwrap_or(0);
                     }
                 }
                 _ => {}
