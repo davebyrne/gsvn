@@ -184,7 +184,9 @@ mod tests {
     fn tokenizer() {
         assert_eq!(
             texts("  let x_1 = foo(a, b);", false),
-            ["  ", "let", " ", "x_1", " ", "=", " ", "foo", "(", "a", ",", " ", "b", ")", ";"]
+            [
+                "  ", "let", " ", "x_1", " ", "=", " ", "foo", "(", "a", ",", " ", "b", ")", ";"
+            ]
         );
         assert_eq!(texts("a+b", true), ["a", "+", "b"]);
         assert_eq!(texts("ab", true), ["a", "b"]);
@@ -198,52 +200,53 @@ mod tests {
 
     #[test]
     fn word_level() {
-        let (o, n) = intra_line("let total = compute(a, b);", "let total = compute(a, c);").unwrap();
-        assert_eq!(o, [23..24]);
-        assert_eq!(n, [23..24]);
+        let (o, n) =
+            intra_line("let total = compute(a, b);", "let total = compute(a, c);").unwrap();
+        assert_eq!(o, vec![23..24]);
+        assert_eq!(n, vec![23..24]);
 
         let (o, n) = intra_line("    return x * x;", "    return x * y + 1;").unwrap();
         // "x" → "y + 1" (adjacent replace + inserts merge across spaces).
-        assert_eq!(o, [15..16]);
-        assert_eq!(n, [15..20]);
+        assert_eq!(o, vec![15..16]);
+        assert_eq!(n, vec![15..20]);
     }
 
     #[test]
     fn insert_and_delete_only() {
         let (o, n) = intra_line("foo(a, b, c)", "foo(a, c)").unwrap();
-        assert_eq!(o, [7..10]);
+        assert_eq!(o, vec![7..10]);
         assert!(n.is_empty());
         let (o, n) = intra_line("foo(a, c)", "foo(a, b, c)").unwrap();
         assert!(o.is_empty());
-        assert_eq!(n, [7..10]);
+        assert_eq!(n, vec![7..10]);
     }
 
     #[test]
     fn char_level_for_short_lines() {
         let (o, n) = intra_line("value1", "value2").unwrap();
-        assert_eq!(o, [5..6]);
-        assert_eq!(n, [5..6]);
+        assert_eq!(o, vec![5..6]);
+        assert_eq!(n, vec![5..6]);
         let (o, n) = intra_line("c", "c2").unwrap();
         assert!(o.is_empty());
-        assert_eq!(n, [1..2]);
+        assert_eq!(n, vec![1..2]);
         // More than one word: word level.
         let (o, n) = intra_line("x = 10", "x = 12").unwrap();
-        assert_eq!(o, [4..6]);
-        assert_eq!(n, [4..6]);
+        assert_eq!(o, vec![4..6]);
+        assert_eq!(n, vec![4..6]);
     }
 
     #[test]
     fn non_ascii_offsets_are_chars() {
         let (o, n) = intra_line("author: jürgen smith here", "author: jürgen jones here").unwrap();
-        assert_eq!(o, [15..20]);
-        assert_eq!(n, [15..20]);
+        assert_eq!(o, vec![15..20]);
+        assert_eq!(n, vec![15..20]);
     }
 
     #[test]
     fn whitespace_only_change() {
         let (o, n) = intra_line("  foo(bar, baz) + qux", "    foo(bar, baz) + qux").unwrap();
-        assert_eq!(o, [0..2]);
-        assert_eq!(n, [0..4]);
+        assert_eq!(o, vec![0..2]);
+        assert_eq!(n, vec![0..4]);
     }
 
     #[test]

@@ -116,7 +116,13 @@ pub fn estimate_rows(f: &FileDiff) -> usize {
         .iter()
         .map(|p| value_lines(p.old.as_deref()).len() + value_lines(p.new.as_deref()).len() + 1)
         .sum();
-    text + props + usize::from(!f.prop_changes.is_empty())
+    // Section heading, plus a spacer after text.
+    let headings = match (f.prop_changes.is_empty(), &f.content) {
+        (true, _) => 0,
+        (false, DiffContent::None) => 1,
+        (false, _) => 2,
+    };
+    text + props + headings
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -168,13 +174,20 @@ impl Rendered {
             self.text.push('\n');
         }
         self.text.push_str(text);
-        self.rows.push(Row { kind, old_no, new_no });
+        self.rows.push(Row {
+            kind,
+            old_no,
+            new_no,
+        });
         (self.rows.len() - 1) as u32
     }
 
     fn span(&mut self, row: u32, ranges: Vec<std::ops::Range<u32>>) {
-        self.spans
-            .extend(ranges.into_iter().map(|r| Span { row, start: r.start, end: r.end }));
+        self.spans.extend(ranges.into_iter().map(|r| Span {
+            row,
+            start: r.start,
+            end: r.end,
+        }));
     }
 
     /// Text of buffer line `i` (tests and debugging).
@@ -300,13 +313,21 @@ fn walk(f: &FileDiff, sink: &mut impl Sink) {
                         continue;
                     }
                     DiffLineKind::Removed => {
-                        removed.push(Item { kind: RowKind::Removed, no: no(line.old_no), text });
+                        removed.push(Item {
+                            kind: RowKind::Removed,
+                            no: no(line.old_no),
+                            text,
+                        });
                         if line.no_newline {
                             removed.push(meta());
                         }
                     }
                     DiffLineKind::Added => {
-                        added.push(Item { kind: RowKind::Added, no: no(line.new_no), text });
+                        added.push(Item {
+                            kind: RowKind::Added,
+                            no: no(line.new_no),
+                            text,
+                        });
                         if line.no_newline {
                             added.push(meta());
                         }
@@ -322,12 +343,26 @@ fn walk(f: &FileDiff, sink: &mut impl Sink) {
     if f.prop_changes.is_empty() {
         return;
     }
+    if !matches!(f.content, DiffContent::None) {
+        // A blank line between the text and the properties.
+        sink.heading(RowKind::Meta, "");
+    }
     sink.heading(RowKind::Section, "Property changes");
     for p in &f.prop_changes {
         sink.heading(RowKind::PropName, &prop_title(p));
-        let old: Vec<String> = value_lines(p.old.as_deref()).into_iter().map(|l| sanitize(l).into_owned()).collect();
-        let new: Vec<String> = value_lines(p.new.as_deref()).into_iter().map(|l| sanitize(l).into_owned()).collect();
-        let item = |kind, text: &String| Item { kind, no: None, text: text.clone() };
+        let old: Vec<String> = value_lines(p.old.as_deref())
+            .into_iter()
+            .map(|l| sanitize(l).into_owned())
+            .collect();
+        let new: Vec<String> = value_lines(p.new.as_deref())
+            .into_iter()
+            .map(|l| sanitize(l).into_owned())
+            .collect();
+        let item = |kind, text: &String| Item {
+            kind,
+            no: None,
+            text: text.clone(),
+        };
         for op in similar::capture_diff_slices(Algorithm::Myers, &old, &new) {
             let (tag, o, n) = op.as_tag_tuple();
             if tag == DiffTag::Equal {
@@ -345,12 +380,19 @@ fn walk(f: &FileDiff, sink: &mut impl Sink) {
 }
 
 fn meta() -> Item {
-    Item { kind: RowKind::Meta, no: None, text: NO_NEWLINE.to_owned() }
+    Item {
+        kind: RowKind::Meta,
+        no: None,
+        text: NO_NEWLINE.to_owned(),
+    }
 }
 
 /// Lines (not `Meta` rows) of a change block, for pairing.
 fn lines(items: &[Item]) -> impl Iterator<Item = (usize, &Item)> {
-    items.iter().enumerate().filter(|(_, i)| i.kind != RowKind::Meta)
+    items
+        .iter()
+        .enumerate()
+        .filter(|(_, i)| i.kind != RowKind::Meta)
 }
 
 struct UnifiedSink(Rendered);
@@ -368,11 +410,25 @@ impl Sink for UnifiedSink {
         let r = &mut self.0;
         let removed_rows: Vec<u32> = removed
             .iter()
-            .map(|i| r.push(i.kind, i.no.filter(|_| i.kind == RowKind::Removed), None, &i.text))
+            .map(|i| {
+                r.push(
+                    i.kind,
+                    i.no.filter(|_| i.kind == RowKind::Removed),
+                    None,
+                    &i.text,
+                )
+            })
             .collect();
         let added_rows: Vec<u32> = added
             .iter()
-            .map(|i| r.push(i.kind, None, i.no.filter(|_| i.kind == RowKind::Added), &i.text))
+            .map(|i| {
+                r.push(
+                    i.kind,
+                    None,
+                    i.no.filter(|_| i.kind == RowKind::Added),
+                    &i.text,
+                )
+            })
             .collect();
         // Pair the k-th removed line with the k-th added line.
         for ((ri, old), (ai, new)) in lines(&removed).zip(lines(&added)) {
@@ -413,11 +469,21 @@ impl Sink for SplitSink {
             let l = removed.get(k);
             let a = added.get(k);
             let lrow = match l {
-                Some(i) => left.push(i.kind, i.no.filter(|_| i.kind == RowKind::Removed), None, &i.text),
+                Some(i) => left.push(
+                    i.kind,
+                    i.no.filter(|_| i.kind == RowKind::Removed),
+                    None,
+                    &i.text,
+                ),
                 None => left.push(RowKind::Filler, None, None, ""),
             };
             let rrow = match a {
-                Some(i) => right.push(i.kind, None, i.no.filter(|_| i.kind == RowKind::Added), &i.text),
+                Some(i) => right.push(
+                    i.kind,
+                    None,
+                    i.no.filter(|_| i.kind == RowKind::Added),
+                    &i.text,
+                ),
                 None => right.push(RowKind::Filler, None, None, ""),
             };
             if let (Some(l), Some(a)) = (l, a)
@@ -459,8 +525,8 @@ pub fn split(f: &FileDiff) -> Split {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use svn_backend::{DiffLine, parse};
     use RowKind::*;
+    use svn_backend::{DiffLine, parse};
 
     fn fixture(name: &str) -> Vec<FileDiff> {
         let path = format!(
@@ -484,7 +550,13 @@ mod tests {
     }
 
     fn line(kind: DiffLineKind, old_no: Option<u64>, new_no: Option<u64>, text: &str) -> DiffLine {
-        DiffLine { kind, old_no, new_no, text: text.into(), no_newline: false }
+        DiffLine {
+            kind,
+            old_no,
+            new_no,
+            text: text.into(),
+            no_newline: false,
+        }
     }
 
     fn file(content: DiffContent) -> FileDiff {
@@ -524,13 +596,17 @@ Index: src/main.c
         let r = unified(f);
         assert_eq!(
             kinds(&r),
-            [Header, Context, Removed, Removed, Added, Added, Added, Context, Context, Header, Context, Removed, Removed, Added]
+            [
+                Header, Context, Removed, Removed, Added, Added, Added, Context, Context, Header,
+                Context, Removed, Removed, Added
+            ]
         );
         assert_eq!(r.line(0), "@@ -1,5 +1,6 @@ int main");
         assert_eq!(r.line(2), "int x = 1;");
         assert_eq!(r.line(9), "@@ -20,3 +21,2 @@ int g(void)");
         assert_eq!(r.text.lines().count(), r.rows.len());
-        let nos: Vec<(Option<u32>, Option<u32>)> = r.rows.iter().map(|r| (r.old_no, r.new_no)).collect();
+        let nos: Vec<(Option<u32>, Option<u32>)> =
+            r.rows.iter().map(|r| (r.old_no, r.new_no)).collect();
         assert_eq!(
             nos,
             [
@@ -555,7 +631,18 @@ Index: src/main.c
         // identical line and "b" with "c2" (nothing in common): no spans.
         assert_eq!(
             r.spans,
-            [Span { row: 2, start: 8, end: 9 }, Span { row: 4, start: 8, end: 10 }]
+            [
+                Span {
+                    row: 2,
+                    start: 8,
+                    end: 9
+                },
+                Span {
+                    row: 4,
+                    start: 8,
+                    end: 10
+                }
+            ]
         );
     }
 
@@ -567,11 +654,17 @@ Index: src/main.c
         assert_eq!(s.left.text.lines().count(), s.left.rows.len());
         assert_eq!(
             kinds(&s.left),
-            [Header, Context, Removed, Removed, Filler, Context, Context, Header, Context, Removed, Removed]
+            [
+                Header, Context, Removed, Removed, Filler, Context, Context, Header, Context,
+                Removed, Removed
+            ]
         );
         assert_eq!(
             kinds(&s.right),
-            [Header, Context, Added, Added, Added, Context, Context, Header, Context, Added, Filler]
+            [
+                Header, Context, Added, Added, Added, Context, Context, Header, Context, Added,
+                Filler
+            ]
         );
         assert_eq!(s.left.line(2), "int x = 1;");
         assert_eq!(s.right.line(2), "int x = 10;");
@@ -585,11 +678,55 @@ Index: src/main.c
         assert!(s.right.rows.iter().all(|r| r.old_no.is_none()));
         let left: Vec<Option<u32>> = s.left.rows.iter().map(|r| r.old_no).collect();
         let right: Vec<Option<u32>> = s.right.rows.iter().map(|r| r.new_no).collect();
-        assert_eq!(left, [None, Some(1), Some(2), Some(3), None, Some(4), Some(5), None, Some(20), Some(21), Some(22)]);
-        assert_eq!(right, [None, Some(1), Some(2), Some(3), Some(4), Some(5), Some(6), None, Some(21), Some(22), None]);
+        assert_eq!(
+            left,
+            [
+                None,
+                Some(1),
+                Some(2),
+                Some(3),
+                None,
+                Some(4),
+                Some(5),
+                None,
+                Some(20),
+                Some(21),
+                Some(22)
+            ]
+        );
+        assert_eq!(
+            right,
+            [
+                None,
+                Some(1),
+                Some(2),
+                Some(3),
+                Some(4),
+                Some(5),
+                Some(6),
+                None,
+                Some(21),
+                Some(22),
+                None
+            ]
+        );
         // "1"→"10" paired row 2; "b"/"c2" are too different → no spans.
-        assert_eq!(s.left.spans, [Span { row: 2, start: 8, end: 9 }]);
-        assert_eq!(s.right.spans, [Span { row: 2, start: 8, end: 10 }]);
+        assert_eq!(
+            s.left.spans,
+            [Span {
+                row: 2,
+                start: 8,
+                end: 9
+            }]
+        );
+        assert_eq!(
+            s.right.spans,
+            [Span {
+                row: 2,
+                start: 8,
+                end: 10
+            }]
+        );
     }
 
     #[test]
@@ -611,7 +748,12 @@ Index: x
         assert_eq!(kinds(&u), [Header, Context, Removed, Meta, Added]);
         assert_eq!(u.line(3), NO_NEWLINE);
         assert_eq!(u.rows[3].old_no, None);
-        assert_eq!(u.spans.len(), 2, "old last/new last still paired: {:?}", u.spans);
+        assert_eq!(
+            u.spans.len(),
+            2,
+            "old last/new last still paired: {:?}",
+            u.spans
+        );
 
         let s = split(f);
         assert_eq!(kinds(&s.left), [Header, Context, Removed, Meta]);
@@ -643,7 +785,10 @@ Index: x
     #[test]
     fn sanitizes_line_breaks() {
         assert_eq!(sanitize("plain"), Cow::Borrowed("plain"));
-        assert_eq!(sanitize("a\rb\0c\u{2029}d\u{2028}"), "a\u{240D}b\u{2400}c\u{00B6}d\u{2424}");
+        assert_eq!(
+            sanitize("a\rb\0c\u{2029}d\u{2028}"),
+            "a\u{240D}b\u{2400}c\u{00B6}d\u{2424}"
+        );
         let f = file(DiffContent::Text(vec![Hunk {
             old_start: 1,
             old_len: 1,
@@ -709,19 +854,48 @@ Index: x
         let files = fixture("local_diff_r6.diff");
         let f = files.iter().find(|f| f.path == "trunk/hello.txt").unwrap();
         let u = unified(f);
-        assert_eq!(kinds(&u), [Section, PropName, Removed, Removed, PropName, Removed, Added]);
+        assert_eq!(
+            kinds(&u),
+            [
+                Section, PropName, Removed, Removed, PropName, Removed, Added
+            ]
+        );
         assert_eq!(u.line(1), "Deleted: my:multi");
         assert_eq!(u.line(2), "line one");
         assert_eq!(u.line(4), "Modified: my:prop");
         assert_eq!(u.line(5), "single value");
         assert_eq!(u.line(6), "changed value");
-        assert!(u.rows.iter().all(|r| r.old_no.is_none() && r.new_no.is_none()));
-        assert_eq!(u.spans, [Span { row: 5, start: 0, end: 6 }, Span { row: 6, start: 0, end: 7 }]);
+        assert!(
+            u.rows
+                .iter()
+                .all(|r| r.old_no.is_none() && r.new_no.is_none())
+        );
+        assert_eq!(
+            u.spans,
+            [
+                Span {
+                    row: 5,
+                    start: 0,
+                    end: 6
+                },
+                Span {
+                    row: 6,
+                    start: 0,
+                    end: 7
+                }
+            ]
+        );
 
         let s = split(f);
-        assert_eq!(kinds(&s.left), [Section, PropName, Removed, Removed, PropName, Removed]);
-        assert_eq!(kinds(&s.right), [Section, PropName, Filler, Filler, PropName, Added]);
-        assert_eq!(estimate_rows(f) >= u.rows.len(), true);
+        assert_eq!(
+            kinds(&s.left),
+            [Section, PropName, Removed, Removed, PropName, Removed]
+        );
+        assert_eq!(
+            kinds(&s.right),
+            [Section, PropName, Filler, Filler, PropName, Added]
+        );
+        assert!(estimate_rows(f) >= u.rows.len());
     }
 
     #[test]
@@ -734,11 +908,17 @@ Index: x
             new: Some("/branches/a:1-5\n/branches/b:3-9\n/branches/c:7\n".into()),
         });
         let u = unified(&f);
-        assert_eq!(kinds(&u), [Section, PropName, Context, Removed, Added, Added]);
+        assert_eq!(
+            kinds(&u),
+            [Section, PropName, Context, Removed, Added, Added]
+        );
         assert_eq!(u.line(1), "Modified: svn:mergeinfo");
         assert_eq!(u.line(2), "/branches/a:1-5");
         let s = split(&f);
-        assert_eq!(kinds(&s.left), [Section, PropName, Context, Removed, Filler]);
+        assert_eq!(
+            kinds(&s.left),
+            [Section, PropName, Context, Removed, Filler]
+        );
         assert_eq!(kinds(&s.right), [Section, PropName, Context, Added, Added]);
         assert_eq!(s.right.line(3), "/branches/b:3-9");
     }
@@ -749,13 +929,26 @@ Index: x
         for f in &files {
             let u = unified(f);
             let s = split(f);
-            assert_eq!(u.text.split('\n').count(), u.rows.len().max(1), "{}", f.path);
+            assert_eq!(
+                u.text.split('\n').count(),
+                u.rows.len().max(1),
+                "{}",
+                f.path
+            );
             assert_eq!(s.left.rows.len(), s.right.rows.len(), "{}", f.path);
             assert!(estimate_rows(f) >= u.rows.len(), "{}", f.path);
             assert!(estimate_rows(f) >= s.left.rows.len(), "{}", f.path);
             let sum = summarize(f);
-            let added = u.rows.iter().filter(|r| r.kind == Added && r.new_no.is_some()).count();
-            let removed = u.rows.iter().filter(|r| r.kind == Removed && r.old_no.is_some()).count();
+            let added = u
+                .rows
+                .iter()
+                .filter(|r| r.kind == Added && r.new_no.is_some())
+                .count();
+            let removed = u
+                .rows
+                .iter()
+                .filter(|r| r.kind == Removed && r.old_no.is_some())
+                .count();
             assert_eq!((sum.added, sum.removed), (added, removed), "{}", f.path);
         }
     }
@@ -763,7 +956,10 @@ Index: x
     /// Every fixture: invariants that the views rely on.
     #[test]
     fn invariants_on_all_fixtures() {
-        let dir = format!("{}/../svn-backend/tests/fixtures", env!("CARGO_MANIFEST_DIR"));
+        let dir = format!(
+            "{}/../svn-backend/tests/fixtures",
+            env!("CARGO_MANIFEST_DIR")
+        );
         let mut checked = 0;
         for entry in std::fs::read_dir(dir).unwrap() {
             let name = entry.unwrap().file_name().into_string().unwrap();
