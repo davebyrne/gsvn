@@ -93,6 +93,8 @@ pub fn run() -> glib::ExitCode {
         });
         crate::auth::install(&ctx);
         install_actions(&ctx);
+        #[cfg(debug_assertions)]
+        crate::viewer::debug::hook(&ctx);
         {
             let ctx = ctx.clone();
             app.connect_activate(move |_| crate::start::open(&ctx));
