@@ -100,6 +100,41 @@ impl RepoUrl {
         Some(decode(rest))
     }
 
+    /// `scheme://host:port` with the default port filled in (80, 443, 3690,
+    /// 22) and the host lower-cased; `file://` for all local repositories.
+    /// This is the key for per-host concurrency limits, credentials
+    /// ([`crate::AuthPrompt::host_key`]) and certificate trust.
+    pub fn host_key(&self) -> String {
+        let (scheme, rest) = self.0.split_once("://").unwrap_or(("", &self.0));
+        if scheme == "file" {
+            return "file://".to_owned();
+        }
+        // RepoUrl::parse percent-encodes IPv6 brackets; undo that here.
+        let authority = decode(rest.split('/').next().unwrap_or(""));
+        let authority = authority.as_str();
+        let hostport = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+        let (host, port) = if hostport.starts_with('[') {
+            match hostport.find(']') {
+                Some(end) => (&hostport[..=end], hostport[end + 1..].strip_prefix(':')),
+                None => (hostport, None),
+            }
+        } else {
+            match hostport.rsplit_once(':') {
+                Some((h, p)) => (h, Some(p)),
+                None => (hostport, None),
+            }
+        };
+        let default = match scheme {
+            "http" => "80",
+            "https" => "443",
+            "svn" => "3690",
+            "svn+ssh" => "22",
+            _ => "",
+        };
+        let port = port.filter(|p| !p.is_empty()).unwrap_or(default);
+        format!("{scheme}://{}:{port}", host.to_ascii_lowercase())
+    }
+
     /// `URL@REV` for passing to svn. Always appending a peg makes paths that
     /// themselves contain `@` unambiguous.
     pub fn with_peg(&self, rev: &crate::Rev) -> String {
@@ -211,6 +246,19 @@ mod tests {
         assert!(u.parent().is_none());
         let f = RepoUrl::parse("file:///tmp/repo").unwrap();
         assert_eq!(f.parent().unwrap().as_str(), "file:///tmp");
+    }
+
+    #[test]
+    fn host_keys() {
+        let k = |s: &str| RepoUrl::parse(s).unwrap().host_key();
+        assert_eq!(k("https://SVN.example.com/repo"), "https://svn.example.com:443");
+        assert_eq!(k("http://h:8080/svn/x"), "http://h:8080");
+        assert_eq!(k("http://user@h/x"), "http://h:80");
+        assert_eq!(k("svn://h"), "svn://h:3690");
+        assert_eq!(k("svn+ssh://u@h/r"), "svn+ssh://h:22");
+        assert_eq!(k("http://[::1]:8080/r"), "http://[::1]:8080");
+        assert_eq!(k("http://[::1]/r"), "http://[::1]:80");
+        assert_eq!(k("file:///tmp/repo"), "file://");
     }
 
     #[test]

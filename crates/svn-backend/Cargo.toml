@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 async-channel = "2.5"
 jiff = "0.2.37"
+libc = "0.2"
 lru = "0.18"
 quick-xml = "0.42"
 thiserror = "2"
