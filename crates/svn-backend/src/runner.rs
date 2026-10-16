@@ -6,7 +6,7 @@
 //!
 //! 1. waits for a slot in the per-host limiter (by priority, cancellable),
 //! 2. spawns `svn` in its own process group with `--non-interactive`,
-//!    `LC_ALL=C` and, if known, stored credentials / trusted cert failures,
+//!    `LC_ALL=C.UTF-8` and, if known, stored credentials / trusted cert failures,
 //! 3. hands stdout to a consumer (normally a `crate::parse` function) while a
 //!    second thread drains stderr and a watcher thread kills the process group
 //!    as soon as the job's [`CancelToken`] is set,
@@ -473,8 +473,11 @@ impl Inner {
 
         let mut cmd = Command::new(&self.config.svn_binary);
         cmd.args(&full)
-            .env("LC_ALL", "C")
-            .env("LANG", "C")
+            // English messages for classification, but UTF-8 so non-ASCII
+            // search terms, usernames and passwords survive svn's
+            // native-encoding conversion (plain "C" fails with E000022).
+            .env("LC_ALL", "C.UTF-8")
+            .env("LANG", "C.UTF-8")
             .env_remove("LANGUAGE")
             .stdin(if snap.creds.is_some() {
                 Stdio::piped()

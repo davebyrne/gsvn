@@ -195,6 +195,9 @@ fn log_search_all_terms_must_match() {
     assert_eq!(revs(&hits), [5, 3]);
     let hits = svn.log(&r.url, 6, &q(&["beta", "nomatch"]), P).collect_blocking().unwrap();
     assert!(hits.is_empty());
+    // Non-ASCII terms must not trip svn's native-encoding conversion.
+    let hits = svn.log(&r.url, 6, &q(&["grüße"]), P).collect_blocking().unwrap();
+    assert!(hits.is_empty());
 }
 
 #[test]
