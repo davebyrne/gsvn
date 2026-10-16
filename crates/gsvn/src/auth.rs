@@ -279,17 +279,24 @@ pub async fn ask_cert_trust(app: &adw::Application, req: &CertRequest) -> bool {
     dialog.choose_future(active_window(app).as_ref()).await == "trust"
 }
 
-/// `GSVN_DEBUG_PROMPTS=1 cargo run` shows both dialogs with fake data (the
-/// keyring is not touched) and prints the answers.
+/// `GSVN_DEBUG_PROMPTS=1 cargo run` shows the dialogs with fake data (the
+/// keyring is not touched) and prints the answers: an auth prompt, a
+/// "rejected" auth prompt, then a certificate prompt. `=rejected` or
+/// `=cert` starts at that one.
 #[cfg(debug_assertions)]
 fn debug_prompts(app: &adw::Application) {
-    if std::env::var_os("GSVN_DEBUG_PROMPTS").is_none() {
+    let Ok(start) = std::env::var("GSVN_DEBUG_PROMPTS") else {
         return;
-    }
+    };
     let app = app.clone();
     glib::spawn_future_local(async move {
         glib::timeout_future(std::time::Duration::from_millis(500)).await;
-        for rejected in [false, true] {
+        let auth_rounds: &[bool] = match start.as_str() {
+            "cert" => &[],
+            "rejected" => &[true],
+            _ => &[false, true],
+        };
+        for &rejected in auth_rounds {
             let req = AuthRequest {
                 host_key: "https://svn.example.com:443".into(),
                 url: "https://svn.example.com/repos/project/trunk".into(),
@@ -315,6 +322,7 @@ fn debug_prompts(app: &adw::Application) {
 /// The real keyring, via the Secret Service (`oo7`; GNOME Keyring on
 /// GNOME). oo7's D-Bus connection runs on its own internal executor, so
 /// its futures can be awaited on the glib main loop.
+#[allow(clippy::result_large_err)] // oo7::Error; never on a hot path
 pub mod keyring {
     use super::CredentialStore;
     use gtk::glib;

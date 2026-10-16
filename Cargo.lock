@@ -757,6 +757,7 @@ dependencies = [
 name = "gsvn"
 version = "0.1.0"
 dependencies = [
+ "gio",
  "glib",
  "gtk4",
  "libadwaita",
