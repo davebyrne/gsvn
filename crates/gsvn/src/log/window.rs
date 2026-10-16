@@ -46,7 +46,7 @@ pub struct LogWindow {
     pub(super) scroller: gtk::ScrolledWindow,
     spinner: adw::Spinner,
     status: gtk::Label,
-    rev_menu: gtk::PopoverMenu,
+    pub(super) rev_menu: gtk::PopoverMenu,
 
     details_stack: gtk::Stack,
     multi_page: adw::StatusPage,
@@ -61,9 +61,9 @@ pub struct LogWindow {
     pub(super) paths_store: gio::ListStore,
     paths_filtered: gtk::FilterListModel,
     pub(super) paths_selection: gtk::SingleSelection,
-    paths_view: gtk::ColumnView,
+    pub(super) paths_view: gtk::ColumnView,
     path_menu_button: gtk::MenuButton,
-    path_popover: gtk::PopoverMenu,
+    pub(super) path_popover: gtk::PopoverMenu,
 
     apply_pending: Cell<bool>,
     pub(super) state: RefCell<State>,
@@ -1202,14 +1202,14 @@ impl LogWindow {
 
     // ---- context menus -------------------------------------------------
 
-    fn revision_context_menu(&self, pos: u32, widget: &gtk::Widget, x: f64, y: f64) {
+    pub(super) fn revision_context_menu(&self, pos: u32, widget: &gtk::Widget, x: f64, y: f64) {
         if !self.selection.is_selected(pos) {
             self.selection.select_item(pos, true);
         }
         popup_at(&self.rev_menu, &self.revisions, widget, x, y);
     }
 
-    fn path_context_menu(&self, pos: u32, widget: &gtk::Widget, x: f64, y: f64) {
+    pub(super) fn path_context_menu(&self, pos: u32, widget: &gtk::Widget, x: f64, y: f64) {
         self.paths_selection.set_selected(pos);
         popup_at(&self.path_popover, &self.paths_view, widget, x, y);
     }

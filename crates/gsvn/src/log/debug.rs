@@ -175,6 +175,21 @@ async fn run_step(win: &Rc<LogWindow>, cmd: &str, arg: &str) {
                 None => eprintln!("[gsvn-log] no other window"),
             }
         }
+        "revmenu" | "pathmenu" => {
+            // `revmenu:ROW,PATH.png`: open the context menu on ROW and render it.
+            let (row, path) = arg.split_once(',').unwrap_or(("0", arg));
+            let row = row.parse().unwrap_or(0);
+            let popover = if cmd == "revmenu" {
+                win.revision_context_menu(row, win.revisions.upcast_ref(), 200.0, 80.0);
+                win.rev_menu.clone()
+            } else {
+                win.path_context_menu(row, win.paths_view.upcast_ref(), 200.0, 40.0);
+                win.path_popover.clone()
+            };
+            sleep(400).await;
+            screenshot(popover.upcast_ref(), path);
+            popover.popdown();
+        }
         "pageerror" => {
             let mut err = svn_backend::SvnError::new(svn_backend::ErrorKind::Network, "Connection reset by peer (simulated)");
             err.code = Some(175012);
