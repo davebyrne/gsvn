@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=gsvn
+GenericName=Subversion Browser
+Comment=Browse Subversion repositories, logs and diffs
+Exec=gsvn %U
+Icon=io.github.gsvn.Gsvn
+Terminal=false
+StartupNotify=true
+Categories=Development;RevisionControl;
+Keywords=svn;subversion;repository;browser;log;diff;blame;

@@ -79,6 +79,13 @@ pub fn run() -> glib::ExitCode {
     });
 
     app.connect_startup(|app| {
+        // Uninstalled debug builds: find the app icon in the source tree.
+        #[cfg(debug_assertions)]
+        if let Some(display) = gtk::gdk::Display::default() {
+            gtk::IconTheme::for_display(&display)
+                .add_search_path(concat!(env!("CARGO_MANIFEST_DIR"), "/../../data/icons"));
+        }
+        gtk::Window::set_default_icon_name(APP_ID);
         let ctx = Rc::new(Ctx {
             app: app.clone(),
             svn: Svn::new(SvnConfig::default()),
