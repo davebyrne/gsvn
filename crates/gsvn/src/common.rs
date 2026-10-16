@@ -5,7 +5,7 @@ use adw::prelude::*;
 use sourceview5::prelude::*;
 use gtk::glib;
 use std::rc::Rc;
-use svn_backend::{ErrorKind, SvnError, Timestamp};
+use svn_backend::{ErrorKind, RepoUrl, RevNum, SvnError, Timestamp};
 
 /// Files larger than this need confirmation before preview/blame (DESIGN.md §8).
 pub const PREVIEW_CONFIRM_BYTES: u64 = 2 * 1024 * 1024;
@@ -158,4 +158,93 @@ pub fn placeholder_window(ctx: &Rc<Ctx>, title: &str, text: &str) {
     ));
     window.set_content(Some(&view));
     window.present();
+}
+
+/// The shared primary menu (☰) model: New Window, About gsvn. Windows may
+/// prepend their own sections with `menu.prepend_section`.
+pub fn main_menu() -> gtk::gio::Menu {
+    let menu = gtk::gio::Menu::new();
+    let section = gtk::gio::Menu::new();
+    section.append(Some("_New Window"), Some("app.new-window"));
+    menu.append_section(None, &section);
+    let section = gtk::gio::Menu::new();
+    section.append(Some("_About gsvn"), Some("app.about"));
+    menu.append_section(None, &section);
+    menu
+}
+
+/// A primary menu button (opens with F10) showing `menu`, usually
+/// [`main_menu`].
+pub fn main_menu_button(menu: &gtk::gio::Menu) -> gtk::MenuButton {
+    gtk::MenuButton::builder()
+        .icon_name("open-menu-symbolic")
+        .tooltip_text("Main Menu")
+        .menu_model(menu)
+        .primary(true)
+        .build()
+}
+
+/// Parse a repository URL typed by the user, with a user-facing error.
+pub fn parse_url_input(input: &str) -> Result<RepoUrl, String> {
+    let input = input.trim();
+    if input.is_empty() {
+        return Err("Enter a repository URL".to_owned());
+    }
+    RepoUrl::parse(input)
+        .map_err(|_| "Not a Subversion URL — it should start with https:// or http://".to_owned())
+}
+
+/// Parse an optional revision typed by the user: empty or `HEAD` → `None`,
+/// `1234` or `r1234` → `Some(1234)`.
+pub fn parse_rev_input(input: &str) -> Result<Option<RevNum>, String> {
+    let input = input.trim();
+    if input.is_empty() || input.eq_ignore_ascii_case("head") {
+        return Ok(None);
+    }
+    let digits = input.strip_prefix(['r', 'R']).unwrap_or(input);
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(format!("“{input}” is not a revision number"));
+    }
+    digits
+        .parse::<RevNum>()
+        .map(Some)
+        .map_err(|_| format!("“{input}” is not a revision number"))
+}
+
+/// Show a simple message dialog on `parent` (standalone when `None`).
+pub fn show_message(parent: Option<&gtk::Widget>, heading: &str, body: &str) {
+    let dialog = adw::AlertDialog::new(Some(heading), Some(body));
+    dialog.add_response("close", "_Close");
+    dialog.set_default_response(Some("close"));
+    dialog.set_close_response("close");
+    dialog.present(parent);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rev_input() {
+        assert_eq!(parse_rev_input(""), Ok(None));
+        assert_eq!(parse_rev_input(" HEAD "), Ok(None));
+        assert_eq!(parse_rev_input("head"), Ok(None));
+        assert_eq!(parse_rev_input("42"), Ok(Some(42)));
+        assert_eq!(parse_rev_input("r42"), Ok(Some(42)));
+        assert!(parse_rev_input("r").is_err());
+        assert!(parse_rev_input("+1").is_err());
+        assert!(parse_rev_input("-1").is_err());
+        assert!(parse_rev_input("abc").is_err());
+    }
+
+    #[test]
+    fn url_input() {
+        assert_eq!(
+            parse_url_input("  https://svn.example.com/repo/ ").unwrap().as_str(),
+            "https://svn.example.com/repo"
+        );
+        assert!(parse_url_input("").is_err());
+        assert!(parse_url_input("svn.example.com/repo").is_err());
+        assert!(parse_url_input("ftp://x/y").is_err());
+    }
 }
