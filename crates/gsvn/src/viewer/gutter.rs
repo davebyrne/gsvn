@@ -14,6 +14,8 @@ use std::rc::Rc;
 /// Shared between the viewer (which fills it) and the gutter (which draws it).
 pub type SharedModel = Rc<RefCell<BlameModel>>;
 
+type LineCallback = Box<dyn Fn(u32)>;
+
 /// Author column width bounds, in characters.
 const MIN_AUTHOR_CHARS: usize = 6;
 const MAX_AUTHOR_CHARS: usize = 14;
@@ -29,7 +31,7 @@ mod imp {
     pub struct BlameGutter {
         pub model: RefCell<SharedModel>,
         pub layout: RefCell<Option<pango::Layout>>,
-        pub on_activate: RefCell<Option<Box<dyn Fn(u32)>>>,
+        pub on_activate: RefCell<Option<LineCallback>>,
         /// Digits of the largest revision that can appear (the file's rev).
         pub rev_digits: Cell<usize>,
         /// Columns currently reserved for the author.

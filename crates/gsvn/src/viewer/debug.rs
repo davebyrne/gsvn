@@ -12,7 +12,7 @@
 //! `shot=PATH`, `dark`, `light`, `blame`, `content`, `load-anyway`,
 //! `cancel`, `cancel-blame`, `since=REV`, `search=TEXT`, `goto=LINE`,
 //! `menu=LINE` (gutter menu), `prev=LINE` (blame previous revision of
-//! LINE's commit), `size=W,H`. The app quits after the last step.
+//! LINE's commit), `save=PATH`, `dump` (gutter allocations), `size=W,H`. The app quits after the last step.
 
 use super::{BlameState, ContentState, Viewer, ViewerMode};
 use crate::app::Ctx;
@@ -106,15 +106,16 @@ pub fn hook(ctx: &Rc<Ctx>) {
                         viewer.window.set_default_size(w, h);
                     }
                 }
+                "save" => Viewer::write_file(Rc::downgrade(&viewer), gtk::gio::File::for_path(arg)).await,
                 "dump" => {
                     let gutter = sourceview5::prelude::ViewExt::gutter(&viewer.view, gtk::TextWindowType::Left);
-                    eprintln!("gutter {:?} width {}", gutter.allocation(), gutter.width());
+                    eprintln!("gutter width {}", gutter.width());
                     let mut child = gutter.first_child();
                     while let Some(c) = child {
                         eprintln!(
-                            "  {} {:?} visible {} measure {:?}",
+                            "  {} bounds {:?} visible {} measure {:?}",
                             c.type_().name(),
-                            c.allocation(),
+                            c.compute_bounds(&gutter),
                             c.is_visible(),
                             c.measure(gtk::Orientation::Horizontal, -1)
                         );

@@ -69,6 +69,8 @@ struct Viewer {
     blame: gutter::SharedModel,
     blame_state: Cell<BlameState>,
     blame_start: Cell<Option<RevNum>>,
+    /// When the running blame started (for the elapsed-time display).
+    blame_started: Cell<Option<std::time::Instant>>,
     /// The content is known to be text, so blame may run.
     blame_allowed: Cell<bool>,
     load_task: RefCell<Option<glib::JoinHandle<()>>>,
@@ -320,6 +322,7 @@ impl Viewer {
             blame,
             blame_state: Cell::new(BlameState::Idle),
             blame_start: Cell::new(None),
+            blame_started: Cell::new(None),
             blame_allowed: Cell::new(false),
             load_task: RefCell::new(None),
             blame_task: RefCell::new(None),
@@ -916,8 +919,25 @@ impl Viewer {
         self.gutter.set_start_rev(self.blame_start.get());
         self.gutter.model_changed();
         self.blame_state.set(BlameState::Running);
+        let started = std::time::Instant::now();
+        self.blame_started.set(Some(started));
         self.banner.set_revealed(false);
         self.update_blame_status();
+        // svn prints blame lines only once it has walked the history, which
+        // can take minutes: tick the elapsed time meanwhile.
+        {
+            let weak = self.weak();
+            glib::timeout_add_seconds_local(1, move || match weak.upgrade() {
+                Some(this)
+                    if this.blame_state.get() == BlameState::Running
+                        && this.blame_started.get() == Some(started) =>
+                {
+                    this.update_blame_status();
+                    glib::ControlFlow::Continue
+                }
+                _ => glib::ControlFlow::Break,
+            });
+        }
 
         let mut stream = self
             .ctx
@@ -1013,7 +1033,17 @@ impl Viewer {
         let mut warning = false;
         let text = match state {
             BlameState::Idle => String::new(),
-            BlameState::Running => format!("Blaming{since}… {} lines", group_thousands(model.received())),
+            BlameState::Running => match model.received() {
+                0 => {
+                    let secs = self.blame_started.get().map_or(0, |t| t.elapsed().as_secs());
+                    if secs < 2 {
+                        format!("Blaming{since}…")
+                    } else {
+                        format!("Blaming{since}… {}", format_elapsed(secs))
+                    }
+                }
+                n => format!("Blaming{since}… {} lines", group_thousands(n)),
+            },
             BlameState::Done => {
                 let n = model.revision_count();
                 let mut s = format!("{} {}{since}", group_thousands(n), if n == 1 { "revision" } else { "revisions" });
@@ -1132,42 +1162,59 @@ impl Viewer {
                 None => return,
             };
             let Ok(file) = dialog.save_future(Some(&window)).await else { return };
-            let Some(this) = weak.upgrade() else { return };
-            let data = this.data.borrow().clone();
-            let (svn, url, rev, name) = (this.ctx.svn.clone(), this.url.clone(), this.rev.get(), this.name.clone());
-            drop(this);
-            let bytes = match data {
-                Some(bytes) => bytes,
-                None => {
-                    if let Some(this) = weak.upgrade() {
-                        this.toast(&format!("Downloading “{name}”…"));
-                    }
-                    match svn.cat(&url, rev, None, Priority::Normal).result().await {
-                        Ok(out) => glib::Bytes::from_owned(out.data),
-                        Err(err) => {
-                            if !err.is_cancelled()
-                                && let Some(this) = weak.upgrade()
-                            {
-                                this.toast(&format!("Could not download “{name}”: {}", err.message));
-                            }
-                            return;
-                        }
-                    }
-                }
-            };
-            let result = file
-                .replace_contents_future(bytes, None, false, gio::FileCreateFlags::REPLACE_DESTINATION)
-                .await;
-            let Some(this) = weak.upgrade() else { return };
-            let shown = file.basename().map(|p| p.display().to_string()).unwrap_or(name);
-            match result {
-                Ok(_) => this.toast(&format!("Saved “{shown}”")),
-                Err((_, err)) => this.toast(&format!("Could not save “{shown}”: {}", err.message())),
-            }
+            Self::write_file(weak, file).await;
         });
         if let Some(old) = self.save_task.replace(Some(task)) {
             old.abort();
         }
+    }
+}
+
+impl Viewer {
+    /// Write the file contents to `file`, downloading them first if they
+    /// were not loaded (binary or large file). Reports with a toast.
+    async fn write_file(weak: Weak<Self>, file: gio::File) {
+        let Some(this) = weak.upgrade() else { return };
+        let data = this.data.borrow().clone();
+        let (svn, url, rev, name) = (this.ctx.svn.clone(), this.url.clone(), this.rev.get(), this.name.clone());
+        drop(this);
+        let bytes = match data {
+            Some(bytes) => bytes,
+            None => {
+                if let Some(this) = weak.upgrade() {
+                    this.toast(&format!("Downloading “{name}”…"));
+                }
+                match svn.cat(&url, rev, None, Priority::Normal).result().await {
+                    Ok(out) => glib::Bytes::from_owned(out.data),
+                    Err(err) => {
+                        if !err.is_cancelled()
+                            && let Some(this) = weak.upgrade()
+                        {
+                            this.toast(&format!("Could not download “{name}”: {}", err.message));
+                        }
+                        return;
+                    }
+                }
+            }
+        };
+        let result = file
+            .replace_contents_future(bytes, None, false, gio::FileCreateFlags::REPLACE_DESTINATION)
+            .await;
+        let Some(this) = weak.upgrade() else { return };
+        let shown = file.basename().map(|p| p.display().to_string()).unwrap_or(name);
+        match result {
+            Ok(_) => this.toast(&format!("Saved “{shown}”")),
+            Err((_, err)) => this.toast(&format!("Could not save “{shown}”: {}", err.message())),
+        }
+    }
+}
+
+/// `42 s`, `3:07`.
+fn format_elapsed(secs: u64) -> String {
+    if secs < 60 {
+        format!("{secs} s")
+    } else {
+        format!("{}:{:02}", secs / 60, secs % 60)
     }
 }
 
@@ -1220,4 +1267,29 @@ fn guess_language(name: &str, mime: Option<&str>, head: &[u8]) -> Option<sourcev
     }
     let (content_type, _) = gio::content_type_guess(Some(name), head);
     manager.guess_language(Some(name), Some(content_type.as_str()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn elapsed() {
+        assert_eq!(format_elapsed(5), "5 s");
+        assert_eq!(format_elapsed(187), "3:07");
+    }
+
+    #[test]
+    fn mime() {
+        let p = |n: &str, v: &str| Property {
+            name: n.to_owned(),
+            value: v.to_owned(),
+        };
+        assert_eq!(mime_type(&[p("svn:eol-style", "native")]), None);
+        assert_eq!(
+            mime_type(&[p("svn:mime-type", " image/png\n")]).as_deref(),
+            Some("image/png")
+        );
+        assert_eq!(mime_type(&[p("svn:mime-type", "  ")]), None);
+    }
 }
