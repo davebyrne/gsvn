@@ -34,6 +34,8 @@ mod imp {
         pub rev_digits: Cell<usize>,
         /// Columns currently reserved for the author.
         pub author_chars: Cell<usize>,
+        /// Line labelled even if not a run start (top of the viewport).
+        pub sticky_line: Cell<u32>,
         /// Blame range start, for tooltips of lines older than it.
         pub start_rev: Cell<Option<svn_backend::RevNum>>,
     }
@@ -87,6 +89,12 @@ mod imp {
             self.parent_begin(lines);
             // Fresh per pass so font changes (style, zoom) are picked up.
             self.layout.replace(Some(self.obj().create_pango_layout(None)));
+            // The first fully visible line keeps the label of a run that
+            // starts above the viewport.
+            let first = lines.first();
+            let (y, _) = lines.line_yrange(first, sourceview5::GutterRendererAlignmentMode::First);
+            self.sticky_line
+                .set(if y < 0 && first < lines.last() { first + 1 } else { first });
         }
 
         fn query_activatable(&self, iter: &gtk::TextIter, _area: &gdk::Rectangle) -> bool {
@@ -222,7 +230,8 @@ impl BlameGutter {
             return;
         }
         let width = self.width() as f32;
-        let fg = self.color();
+        // The gutter itself is styled dim; use the text colour.
+        let fg = self.view().color();
         let (cell_y, cell_h) = lines.line_yrange(line, sourceview5::GutterRendererAlignmentMode::Cell);
         let (cell_y, cell_h) = (cell_y as f32, cell_h as f32);
 
@@ -240,7 +249,7 @@ impl BlameGutter {
 
         // Label the first line of a run, and the top visible line so the
         // revision of a run scrolled half out of view stays visible.
-        if !(model.is_run_start(idx) || line == lines.first()) {
+        if !(model.is_run_start(idx) || line == self.imp().sticky_line.get()) {
             return;
         }
         let (y, h) = lines.line_yrange(line, sourceview5::GutterRendererAlignmentMode::First);
@@ -258,14 +267,14 @@ impl BlameGutter {
             snapshot.restore();
         };
         match commit {
-            None => draw("…", x0, 0.55),
+            None => draw("…", x0, 0.5),
             Some(c) => {
                 let rev = format!("r{}", c.rev);
                 // Right-align the revision in its column.
                 let pad = rev_cols.saturating_sub(rev.chars().count()) as f32 * cw;
                 draw(&rev, x0 + pad, 0.9);
                 let author = ellipsize(c.author.as_deref().unwrap_or("—"), self.imp().author_chars.get());
-                draw(&author, x0 + (rev_cols + 2) as f32 * cw, 0.6);
+                draw(&author, x0 + (rev_cols + 2) as f32 * cw, 0.65);
             }
         }
     }

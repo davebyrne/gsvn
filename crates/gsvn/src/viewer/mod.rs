@@ -1107,7 +1107,11 @@ impl Viewer {
     fn goto_line(&self, line: usize) {
         let Some(iter) = self.buffer.iter_at_line(line.saturating_sub(1) as i32) else { return };
         self.buffer.place_cursor(&iter);
-        self.view.scroll_to_mark(&self.buffer.get_insert(), 0.0, true, 0.0, 0.3);
+        // An xalign of 0 would put column 0 at the left edge and scroll the
+        // left margin out of view; offset it by the margin instead.
+        let width = self.view.visible_rect().width().max(1);
+        let xalign = (f64::from(self.view.left_margin() + 2) / f64::from(width)).min(1.0);
+        scroll_to_insert(&self.view, xalign, 0.3);
         self.view.grab_focus();
     }
 
@@ -1165,6 +1169,20 @@ impl Viewer {
             old.abort();
         }
     }
+}
+
+/// Scroll the cursor into view, and again once the view is idle: while a
+/// large buffer is still being validated, line heights are estimates and
+/// the first scroll can land far off.
+fn scroll_to_insert(view: &sourceview5::View, xalign: f64, yalign: f64) {
+    view.scroll_to_mark(&view.buffer().get_insert(), 0.0, true, xalign, yalign);
+    let view = view.downgrade();
+    glib::idle_add_local_full(glib::Priority::LOW, move || {
+        if let Some(view) = view.upgrade() {
+            view.scroll_to_mark(&view.buffer().get_insert(), 0.0, true, xalign, yalign);
+        }
+        glib::ControlFlow::Break
+    });
 }
 
 fn pill_button(label: &str, suggested: bool) -> gtk::Button {

@@ -36,7 +36,8 @@ impl Search {
             .tooltip_text("Next Match (Enter)")
             .build();
         let case = gtk::ToggleButton::builder()
-            .icon_name("format-text-case-symbolic")
+            .label("Aa")
+            .css_classes(["flat"])
             .tooltip_text("Match Case")
             .build();
         let nav = gtk::Box::builder().css_classes(["linked"]).build();
@@ -184,8 +185,7 @@ impl Search {
         if let Some((start, end, _wrapped)) = found {
             let buffer = self.view.buffer();
             buffer.select_range(&start, &end);
-            let mark = buffer.get_insert();
-            self.view.scroll_to_mark(&mark, 0.0, true, 0.5, 0.33);
+            super::scroll_to_insert(&self.view, 0.5, 0.33);
         }
         self.update_count();
     }

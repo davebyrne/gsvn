@@ -106,6 +106,21 @@ pub fn hook(ctx: &Rc<Ctx>) {
                         viewer.window.set_default_size(w, h);
                     }
                 }
+                "dump" => {
+                    let gutter = sourceview5::prelude::ViewExt::gutter(&viewer.view, gtk::TextWindowType::Left);
+                    eprintln!("gutter {:?} width {}", gutter.allocation(), gutter.width());
+                    let mut child = gutter.first_child();
+                    while let Some(c) = child {
+                        eprintln!(
+                            "  {} {:?} visible {} measure {:?}",
+                            c.type_().name(),
+                            c.allocation(),
+                            c.is_visible(),
+                            c.measure(gtk::Orientation::Horizontal, -1)
+                        );
+                        child = c.next_sibling();
+                    }
+                }
                 _ => eprintln!("unknown step {step}"),
             }
         }
