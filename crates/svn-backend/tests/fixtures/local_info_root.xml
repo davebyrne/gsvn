@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<info>
+<entry
+   path="repo"
+   revision="6"
+   kind="dir">
+<url>file:///tmp/gsvn-fixture/repo</url>
+<relative-url>^/</relative-url>
+<repository>
+<root>file:///tmp/gsvn-fixture/repo</root>
+<uuid>01234567-89ab-cdef-0123-456789abcdef</uuid>
+</repository>
+<commit
+   revision="6">
+<author>bob</author>
+<date>2026-06-07T08:09:10.000000Z</date>
+</commit>
+</entry>
+</info>

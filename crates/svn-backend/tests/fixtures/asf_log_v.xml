@@ -1,0 +1,451 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<log>
+<logentry
+   revision="1939086">
+<author>kotkov</author>
+<date>2026-10-13T09:35:07.729908Z</date>
+<paths>
+<path
+   prop-mods="false"
+   text-mods="true"
+   kind="file"
+   action="M">/subversion/trunk/tools/dist/release-lines.yaml</path>
+</paths>
+<msg>* tools/dist/release-lines.yaml: Update recommended_release (to 1.15) and
+  supported_release_lines (to 1.14 and 1.15).
+</msg>
+</logentry>
+<logentry
+   revision="1938822">
+<author>ivan</author>
+<date>2026-10-06T15:00:48.978571Z</date>
+<paths>
+<path
+   kind="file"
+   action="M"
+   prop-mods="false"
+   text-mods="true">/subversion/trunk/subversion/svnserve/logger.c</path>
+</paths>
+<msg>Fix a race condition in svnserve logging when running in threaded mode.
+
+Memory allocations from the shared logger-&gt;pool were being performed 
+before the logger-&gt;mutex was acquired, leading to potential pool 
+corruption and SEGV crashes during high-frequency concurrent logging 
+events (e.g. client connection reset bursts).
+
+* subversion/svnserve/logger.c
+  (log_message): Move apr_palloc() calls inside the mutex-protected critical
+   section.
+
+Patch by: eric.boehm {at} broadcom.com</msg>
+</logentry>
+<logentry
+   revision="1938801">
+<author>stsp</author>
+<date>2026-10-05T15:27:26.368013Z</date>
+<paths>
+<path
+   kind="file"
+   action="M"
+   prop-mods="false"
+   text-mods="true">/subversion/trunk/tools/dev/unix-build/Makefile.svn</path>
+</paths>
+<msg>* tools/dev/unix-build/Makefile.svn: Create directory for SASL patches.
+   Otherwise the build could fail since we were trying to create these
+   patch files in a missing directory.
+</msg>
+</logentry>
+<logentry
+   revision="1938800">
+<author>stsp</author>
+<date>2026-10-05T15:15:47.805608Z</date>
+<paths>
+<path
+   action="M"
+   prop-mods="false"
+   text-mods="true"
+   kind="file">/subversion/trunk/tools/dev/unix-build/Makefile.svn</path>
+</paths>
+<msg>* tools/dev/unix-build/Makefile.svn: Consistently set CFLAGS across all
+  dependencies to disable compiler optimizations by default for easier
+  debugging in GDB, and to enable debug symbols.
+</msg>
+</logentry>
+<logentry
+   revision="1938799">
+<author>stsp</author>
+<date>2026-10-05T15:06:56.733221Z</date>
+<paths>
+<path
+   prop-mods="false"
+   text-mods="true"
+   kind="file"
+   action="M">/subversion/trunk/tools/dev/unix-build/Makefile.svn</path>
+</paths>
+<msg>* tools/dev/unix-build/Makefile.svn: fix default http conf example
+</msg>
+</logentry>
+<logentry
+   revision="1938798">
+<author>stsp</author>
+<date>2026-10-05T14:57:46.017790Z</date>
+<paths>
+<path
+   kind="file"
+   action="M"
+   prop-mods="false"
+   text-mods="true">/subversion/trunk/tools/dev/unix-build/Makefile.svn</path>
+</paths>
+<msg>* tools/dev/unix-build/Makefile.svn: Allow gettext 1.0 to build on older
+   platforms (SLES12) which do not handle the inline magic required for
+   the xstring descriptor in gnulib. The build failed because xsd_c() was
+   not found as an external symbol for its.o where it was expected in
+   external linkage even though gettext is trying to inline xsd_c().
+
+   &gt; nm libgettextsrc_la-its.o  | grep xsd_c
+                    U xsd_c
+
+</msg>
+</logentry>
+<logentry
+   revision="1938795">
+<author>stsp</author>
+<date>2026-10-05T13:36:53.896631Z</date>
+<paths>
+<path
+   action="M"
+   prop-mods="false"
+   text-mods="true"
+   kind="file">/subversion/trunk/tools/dev/unix-build/Makefile.svn</path>
+</paths>
+<msg>* tools/dev/unix-build/ Makefile.svn: Fix build of APR-util 1.6.5 with older
+   compilers which lack the __has_attribute() macro.
+</msg>
+</logentry>
+<logentry
+   revision="1938794">
+<author>stsp</author>
+<date>2026-10-05T13:18:09.324408Z</date>
+<paths>
+<path
+   prop-mods="false"
+   text-mods="true"
+   kind="file"
+   action="M">/subversion/trunk/tools/dev/unix-build/Makefile.svn</path>
+</paths>
+<msg>* tools/dev/unix-build/Makefile.svn: Update to Apache HTTPD 2.4.69
+</msg>
+</logentry>
+<logentry
+   revision="1938792">
+<author>stsp</author>
+<date>2026-10-05T13:00:16.397773Z</date>
+<paths>
+<path
+   action="M"
+   prop-mods="false"
+   text-mods="true"
+   kind="file">/subversion/trunk/tools/dev/unix-build/Makefile.svn</path>
+</paths>
+<msg>* tools/dev/unix-build/Makefile.svn: update to OpenLDAP 2.6.13
+</msg>
+</logentry>
+<logentry
+   revision="1938493">
+<author>lyalyakin</author>
+<date>2026-09-24T14:53:41.280941Z</date>
+<paths>
+<path
+   prop-mods="false"
+   text-mods="true"
+   kind="file"
+   action="M">/subversion/trunk/INSTALL</path>
+</paths>
+<msg>A typofix in INSTALL.
+
+* INSTALL
+  (II): Typofix.</msg>
+</logentry>
+<logentry
+   revision="1938454">
+<author>ivan</author>
+<date>2026-09-23T08:35:39.418121Z</date>
+<paths>
+<path
+   action="M"
+   prop-mods="false"
+   text-mods="true"
+   kind="file">/subversion/trunk/subversion/libsvn_ra_serf/get_lock.c</path>
+</paths>
+<msg>Cleanup unused code.
+
+* subversion/libsvn_ra_serf/get_lock.c
+  (lock_info_t): Remove PATH member.
+  (svn_ra_serf__get_lock): Do not initialize lock_ctx-&gt;path.  </msg>
+</logentry>
+<logentry
+   revision="1938389">
+<author>ivan</author>
+<date>2026-09-20T11:57:31.672133Z</date>
+<paths>
+<path
+   action="M"
+   prop-mods="false"
+   text-mods="true"
+   kind="file">/subversion/trunk/subversion/libsvn_subr/subst.c</path>
+</paths>
+<msg>Save few cycles.
+
+* subversion/libsvn_subr/subst.c
+  (stream_translated): Use klen from apr_hash_t and apr_pstrmemdup() instead
+   of apr_pstrdup() to copy string. </msg>
+</logentry>
+<logentry
+   revision="1938378">
+<author>ivan</author>
+<date>2026-09-19T19:36:21.303629Z</date>
+<paths>
+<path
+   action="M"
+   prop-mods="false"
+   text-mods="true"
+   kind="file">/subversion/trunk/subversion/libsvn_wc/deprecated.c</path>
+</paths>
+<msg>Fix bug in svn_wc_add_repos_file2(). This function is deprecated so it's not
+a real problem in Subversion itself.
+
+* subversion/libsvn_wc/deprecated.c
+  (svn_wc_add_repos_file2): Use svn_prop_get_value() instead of
+   svn_hash_gets() to get const char * from property hash.</msg>
+</logentry>
+<logentry
+   revision="1938377">
+<author>ivan</author>
+<date>2026-09-19T19:22:48.780734Z</date>
+<paths>
+<path
+   prop-mods="false"
+   text-mods="true"
+   kind="file"
+   action="M">/subversion/trunk/subversion/libsvn_repos/repos.c</path>
+</paths>
+<msg>* subversion/libsvn_repos/repos.c
+  (fs_upgrade_notify): Call svn_repos_notify_create() with proper ACTION
+   parameter instead of using fake value and then updating created
+   svn_repos_notify_t instance.</msg>
+</logentry>
+<logentry
+   revision="1938374">
+<author>ivan</author>
+<date>2026-09-19T15:54:01.384006Z</date>
+<paths>
+<path
+   text-mods="true"
+   kind="file"
+   action="M"
+   prop-mods="false">/subversion/trunk/subversion/libsvn_repos/repos.c</path>
+</paths>
+<msg>Add explicit cast to silence warning on platform where svn_revnum_t is smaller
+than apr_uint64_t.
+
+* subversion/libsvn_repos/repos.c
+  (fs_upgrade_notify): Add explicit cast.</msg>
+</logentry>
+<logentry
+   revision="1938367">
+<author>ivan</author>
+<date>2026-09-19T13:16:35.019962Z</date>
+<paths>
+<path
+   prop-mods="false"
+   text-mods="true"
+   kind="file"
+   action="M">/subversion/trunk/subversion/libsvn_client/cat.c</path>
+<path
+   prop-mods="false"
+   text-mods="true"
+   kind="file"
+   action="M">/subversion/trunk/subversion/libsvn_client/diff_local.c</path>
+<path
+   prop-mods="false"
+   text-mods="true"
+   kind="file"
+   action="M">/subversion/trunk/subversion/libsvn_client/export.c</path>
+<path
+   prop-mods="false"
+   text-mods="true"
+   kind="file"
+   action="M">/subversion/trunk/subversion/libsvn_client/import.c</path>
+<path
+   action="M"
+   prop-mods="false"
+   text-mods="true"
+   kind="file">/subversion/trunk/subversion/libsvn_client/patch.c</path>
+</paths>
+<msg>Simplify code a bit by using svn_prop_get_value() instead of svn_hash_gets()
+to property value from properties hash.
+
+* subversion/libsvn_client/cat.c
+* subversion/libsvn_client/diff_local.c
+* subversion/libsvn_client/export.c
+* subversion/libsvn_client/import.c
+* subversion/libsvn_client/patch.c
+  (svn_client__get_normalized_stream, svn_client_cat3, translate_if_necessary,
+   export_node, send_file_contents, obtain_eol_and_keywords_for_file):
+   Use svn_prop_get_value() instead of svn_hash_gets(). Do not check for
+   NULL property value when calling  svn_subst_eol_style_from_value() because
+   it's already handles NULL value.
+</msg>
+</logentry>
+<logentry
+   revision="1938248">
+<author>rinrab</author>
+<date>2026-09-15T12:36:22.383116Z</date>
+<paths>
+<path
+   prop-mods="false"
+   text-mods="true"
+   kind="file"
+   action="M">/subversion/trunk/subversion/libsvn_ra/deprecated.c</path>
+<path
+   prop-mods="false"
+   text-mods="true"
+   kind="file"
+   action="M">/subversion/trunk/subversion/libsvn_ra/ra_loader.c</path>
+<path
+   prop-mods="false"
+   text-mods="false"
+   kind="file"
+   action="D">/subversion/trunk/subversion/libsvn_ra/wrapper_template.h</path>
+<path
+   action="M"
+   prop-mods="false"
+   text-mods="true"
+   kind="file">/subversion/trunk/subversion/libsvn_ra_local/ra_init.h</path>
+<path
+   action="M"
+   prop-mods="false"
+   text-mods="true"
+   kind="file">/subversion/trunk/subversion/libsvn_ra_local/ra_plugin.c</path>
+<path
+   action="M"
+   prop-mods="false"
+   text-mods="true"
+   kind="file">/subversion/trunk/subversion/libsvn_ra_serf/ra_init.h</path>
+<path
+   action="M"
+   prop-mods="false"
+   text-mods="true"
+   kind="file">/subversion/trunk/subversion/libsvn_ra_serf/serf.c</path>
+<path
+   action="M"
+   prop-mods="false"
+   text-mods="true"
+   kind="file">/subversion/trunk/subversion/libsvn_ra_svn/client.c</path>
+<path
+   action="M"
+   prop-mods="false"
+   text-mods="true"
+   kind="file">/subversion/trunk/subversion/libsvn_ra_svn/ra_init.h</path>
+<path
+   action="M"
+   prop-mods="false"
+   text-mods="true"
+   kind="file">/subversion/trunk/subversion/tests/libsvn_ra/ra-test.c</path>
+</paths>
+<msg>Remove compat RA plugins (svn_ra_plugin_t).
+
+The API has been deprecated since 1.1 (22 years ago). There are no tests on it
+and no users. Also it was completely broken for the past two major versions (at
+least). 
+
+Does it go against our backward compatibility promise? No, it doesn't. The
+symbols do still exist, only they will return a "not implemented" error instead
+of actually initialising the modules - the same exact behaviour as if those
+modules were not built at all or if one would attempt to initialise ra_dav.
+
+* subversion/libsvn_ra/ra_loader.c
+  (ra_lib_defn): Remove compat_initfunc field.
+  (svn_ra_get_ra_library): Just return "not implemented".
+  (svn_ra_serf_init,
+   svn_ra_local_init,
+   svn_ra_svn_init): Always return "not
+   implemented" error.
+
+* subversion/libsvn_ra/wrapper_template.h: Delete.
+
+* subversion/libsvn_ra_local/ra_init.h,
+  subversion/libsvn_ra_serf/ra_init.h,
+  subversion/libsvn_ra_svn/ra_init.h
+  (svn_ra_serf__compat_init,
+   svn_ra_svn__compat_init,
+   svn_ra_local__compat_init): Remove declarations.
+
+* subversion/libsvn_ra_local/ra_plugin.c,
+  subversion/libsvn_ra_serf/serf.c,
+  subversion/libsvn_ra_svn/client.c
+  (): Don't setup wrapper_template.
+
+* subversion/tests/libsvn_ra/ra-test.c
+  (test_compat_vtable): Remove this test.
+  (test_funcs): Don't run test_compat_vtable.
+
+Discussed on dev@s.a.o. [1] with a +1 from brane.
+
+[1] https://lists.apache.org/thread/1vyovwpp95ttnhb7fjc1k8bfjz0s3mtm
+</msg>
+</logentry>
+<logentry
+   revision="1938215">
+<author>lyalyakin</author>
+<date>2026-09-14T22:23:21.898852Z</date>
+<paths>
+<path
+   text-mods="true"
+   kind="file"
+   action="M"
+   prop-mods="false">/subversion/trunk/INSTALL</path>
+</paths>
+<msg>Remove a redundant text segment from INSTALL.
+
+* INSTALL
+  (IV): Remove the redundant "... if you are in a real hurry to get building,
+   you can skip straight to section II ..." advice. It makes no sense now,
+   when section IV 'Dependencies in Detail' is at the bottom of the document.</msg>
+</logentry>
+<logentry
+   revision="1938214">
+<author>lyalyakin</author>
+<date>2026-09-14T21:52:35.103569Z</date>
+<paths>
+<path
+   kind="file"
+   action="M"
+   prop-mods="false"
+   text-mods="true">/subversion/trunk/INSTALL</path>
+</paths>
+<msg>Remove an inaccurate description of autogen.sh from section II.A.2 of INSTALL.
+
+* INSTALL
+  (II.A.2): Remove the inaccurate description of autogen.sh. Just say that it
+   generates the ./configure script.</msg>
+</logentry>
+<logentry
+   revision="1938205">
+<author>lyalyakin</author>
+<date>2026-09-14T16:55:15.586357Z</date>
+<paths>
+<path
+   action="M"
+   prop-mods="false"
+   text-mods="true"
+   kind="file">/subversion/trunk/INSTALL</path>
+</paths>
+<msg>Remove an unnecessary paragraph from II.A.2 in INSTALL.
+
+* INSTALL
+  (II.A.2): Remove the "discard the directory created by the tarball"
+   paragraph. The paragraph assumes that the reader has just built SVN from a
+   tarball, which is not exactly the case with the current layout of INSTALL.</msg>
+</logentry>
+</log>

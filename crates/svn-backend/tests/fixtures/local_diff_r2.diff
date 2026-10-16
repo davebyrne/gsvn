@@ -1,0 +1,113 @@
+Index: trunk/a b.txt
+===================================================================
+--- trunk/a b.txt	(nonexistent)
++++ trunk/a b.txt	(revision 2)
+@@ -0,0 +1 @@
++spaces
+Index: trunk/amp&co.txt
+===================================================================
+--- trunk/amp&co.txt	(nonexistent)
++++ trunk/amp&co.txt	(revision 2)
+@@ -0,0 +1 @@
++amp
+Index: trunk/at@sign.txt
+===================================================================
+--- trunk/at@sign.txt	(nonexistent)
++++ trunk/at@sign.txt	(revision 2)
+@@ -0,0 +1 @@
++at
+Index: trunk/binary.bin
+===================================================================
+Cannot display: file marked as a binary type.
+svn:mime-type = application/octet-stream
+
+Property changes on: trunk/binary.bin
+___________________________________________________________________
+Added: svn:mime-type
+## -0,0 +1 ##
++application/octet-stream
+\ No newline at end of property
+Index: trunk/crlf.txt
+===================================================================
+--- trunk/crlf.txt	(nonexistent)
++++ trunk/crlf.txt	(revision 2)
+@@ -0,0 +1,3 @@
++one
++two
++three
+Index: trunk/dashes.txt
+===================================================================
+--- trunk/dashes.txt	(nonexistent)
++++ trunk/dashes.txt	(revision 2)
+@@ -0,0 +1,7 @@
++keep
++-- old dashes
++middle
++++ old plus
++Index: not a header
++@@ -1 +1 @@ not a hunk
++end
+Index: trunk/empty.txt
+===================================================================
+Index: trunk/hello.txt
+===================================================================
+--- trunk/hello.txt	(nonexistent)
++++ trunk/hello.txt	(revision 2)
+@@ -0,0 +1,30 @@
++line 1
++line 2
++line 3
++line 4
++line 5
++line 6
++line 7
++line 8
++line 9
++line 10
++line 11
++line 12
++line 13
++line 14
++line 15
++line 16
++line 17
++line 18
++line 19
++line 20
++line 21
++line 22
++line 23
++line 24
++line 25
++line 26
++line 27
++line 28
++line 29
++line 30
+Index: trunk/latin1.txt
+===================================================================
+--- trunk/latin1.txt	(nonexistent)
++++ trunk/latin1.txt	(revision 2)
+@@ -0,0 +1,2 @@
++caf�
++na�ve
+Index: trunk/noeol.txt
+===================================================================
+--- trunk/noeol.txt	(nonexistent)
++++ trunk/noeol.txt	(revision 2)
+@@ -0,0 +1,2 @@
++first
++last without newline
+\ No newline at end of file
+Index: trunk/sub dir/nested.txt
+===================================================================
+--- trunk/sub dir/nested.txt	(nonexistent)
++++ trunk/sub dir/nested.txt	(revision 2)
+@@ -0,0 +1 @@
++nested
+Index: trunk/unicodé-日本.txt
+===================================================================
+--- trunk/unicodé-日本.txt	(nonexistent)
++++ trunk/unicodé-日本.txt	(revision 2)
+@@ -0,0 +1 @@
++unicode

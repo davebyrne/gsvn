@@ -17,6 +17,16 @@ mod info;
 mod list;
 mod log;
 mod proplist;
+mod xml;
+
+/// `kind="file"` / `kind="dir"` → [`NodeKind`]; anything else → `None`.
+fn parse_kind(s: Option<&str>) -> Option<NodeKind> {
+    match s?.trim() {
+        "file" => Some(NodeKind::File),
+        "dir" => Some(NodeKind::Dir),
+        _ => None,
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("parse error: {0}")]

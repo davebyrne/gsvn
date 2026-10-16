@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<properties>
+<target
+   path="file:///tmp/gsvn-fixture/repo/trunk">
+<property
+   name="svn:ignore">*.o
+*.tmp
+</property>
+</target>
+</properties>
