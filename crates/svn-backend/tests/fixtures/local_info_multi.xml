@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <info>
 <entry
+   kind="file"
    size="7"
    path="a b.txt"
-   revision="5"
-   kind="file">
+   revision="5">
 <url>file:///tmp/gsvn-fixture/repo/trunk/a%20b.txt</url>
 <relative-url>^/trunk/a%20b.txt</relative-url>
 <repository>
@@ -18,10 +18,10 @@
 </commit>
 </entry>
 <entry
-   size="8"
-   path="unicodé-日本.txt"
    revision="6"
-   kind="file">
+   kind="file"
+   size="8"
+   path="unicodé-日本.txt">
 <url>file:///tmp/gsvn-fixture/repo/trunk/unicod%C3%A9-%E6%97%A5%E6%9C%AC.txt</url>
 <relative-url>^/trunk/unicod%C3%A9-%E6%97%A5%E6%9C%AC.txt</relative-url>
 <repository>
