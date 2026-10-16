@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<log>
+<logentry
+   revision="6">
+<author>bob</author>
+<date>2026-06-07T08:09:10.000000Z</date>
+<paths>
+<path
+   action="D"
+   prop-mods="false"
+   text-mods="false"
+   kind="file">/trunk/a b.txt</path>
+<path
+   prop-mods="false"
+   text-mods="true"
+   kind="file"
+   action="R">/trunk/amp&amp;co.txt</path>
+<path
+   prop-mods="false"
+   text-mods="false"
+   kind="file"
+   action="D">/trunk/empty.txt</path>
+<path
+   action="M"
+   prop-mods="true"
+   text-mods="false"
+   kind="file">/trunk/hello.txt</path>
+<path
+   action="A"
+   prop-mods="false"
+   text-mods="true"
+   kind="file">/trunk/new-empty.txt</path>
+</paths>
+<msg>Delete, replace &amp; add</msg>
+</logentry>
+<logentry
+   revision="5">
+<author>alice</author>
+<date>2026-05-06T07:08:09.100000Z</date>
+<paths>
+<path
+   action="A"
+   prop-mods="false"
+   text-mods="false"
+   kind="dir"
+   copyfrom-path="/trunk"
+   copyfrom-rev="4">/branches/feature-1</path>
+</paths>
+<msg>Branch feature-1</msg>
+</logentry>
+<logentry
+   revision="4">
+<date>2026-04-05T06:07:08.000000Z</date>
+<paths>
+<path
+   prop-mods="true"
+   text-mods="false"
+   kind="dir"
+   action="M">/trunk</path>
+<path
+   prop-mods="true"
+   text-mods="false"
+   kind="file"
+   action="M">/trunk/hello.txt</path>
+</paths>
+<msg>Props only</msg>
+</logentry>
+<logentry
+   revision="3">
+<author>carol</author>
+<date>2026-03-04T05:06:07.000000Z</date>
+<paths>
+<path
+   prop-mods="false"
+   text-mods="true"
+   kind="file"
+   action="M">/trunk/binary.bin</path>
+<path
+   action="M"
+   prop-mods="false"
+   text-mods="true"
+   kind="file">/trunk/crlf.txt</path>
+<path
+   action="M"
+   prop-mods="false"
+   text-mods="true"
+   kind="file">/trunk/dashes.txt</path>
+<path
+   action="M"
+   prop-mods="false"
+   text-mods="true"
+   kind="file">/trunk/hello.txt</path>
+<path
+   action="M"
+   prop-mods="false"
+   text-mods="true"
+   kind="file">/trunk/latin1.txt</path>
+<path
+   kind="file"
+   action="M"
+   prop-mods="false"
+   text-mods="true">/trunk/noeol.txt</path>
+</paths>
+<msg></msg>
+</logentry>
+<logentry
+   revision="2">
+<author>bob</author>
+<date>2026-02-03T04:05:06.789012Z</date>
+<paths>
+<path
+   action="A"
+   prop-mods="false"
+   text-mods="true"
+   kind="file">/trunk/a b.txt</path>
+<path
+   action="A"
+   prop-mods="false"
+   text-mods="true"
+   kind="file">/trunk/amp&amp;co.txt</path>
+<path
+   action="A"
+   prop-mods="false"
+   text-mods="true"
+   kind="file">/trunk/at@sign.txt</path>
+<path
+   action="A"
+   prop-mods="true"
+   text-mods="true"
+   kind="file">/trunk/binary.bin</path>
+<path
+   action="A"
+   prop-mods="false"
+   text-mods="true"
+   kind="file">/trunk/crlf.txt</path>
+<path
+   action="A"
+   prop-mods="false"
+   text-mods="true"
+   kind="file">/trunk/dashes.txt</path>
+<path
+   text-mods="true"
+   kind="file"
+   action="A"
+   prop-mods="false">/trunk/empty.txt</path>
+<path
+   text-mods="true"
+   kind="file"
+   action="A"
+   prop-mods="false">/trunk/hello.txt</path>
+<path
+   text-mods="true"
+   kind="file"
+   action="A"
+   prop-mods="false">/trunk/latin1.txt</path>
+<path
+   text-mods="true"
+   kind="file"
+   action="A"
+   prop-mods="false">/trunk/noeol.txt</path>
+<path
+   prop-mods="false"
+   text-mods="false"
+   kind="dir"
+   action="A">/trunk/sub dir</path>
+<path
+   prop-mods="false"
+   text-mods="true"
+   kind="file"
+   action="A">/trunk/sub dir/nested.txt</path>
+<path
+   action="A"
+   prop-mods="false"
+   text-mods="true"
+   kind="file">/trunk/unicodé-日本.txt</path>
+</paths>
+<msg>
+  Add files &lt;b&gt;&amp;amp; "stuff"&lt;/b&gt; 'q' &amp; more
+
+Unicode: 日本語 — ü
+
+</msg>
+</logentry>
+<logentry
+   revision="1">
+<author>alice</author>
+<date>2026-01-02T10:00:00.000001Z</date>
+<paths>
+<path
+   text-mods="false"
+   kind="dir"
+   action="A"
+   prop-mods="false">/branches</path>
+<path
+   text-mods="false"
+   kind="dir"
+   action="A"
+   prop-mods="false">/tags</path>
+<path
+   text-mods="false"
+   kind="dir"
+   action="A"
+   prop-mods="false">/trunk</path>
+</paths>
+<msg>Initial layout</msg>
+</logentry>
+</log>

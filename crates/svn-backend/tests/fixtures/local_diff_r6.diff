@@ -1,0 +1,32 @@
+Index: trunk/a b.txt
+===================================================================
+--- trunk/a b.txt	(revision 5)
++++ trunk/a b.txt	(nonexistent)
+@@ -1 +0,0 @@
+-spaces
+Index: trunk/amp&co.txt
+===================================================================
+--- trunk/amp&co.txt	(revision 5)
++++ trunk/amp&co.txt	(revision 6)
+@@ -1 +1 @@
+-amp
++replaced
+Index: trunk/hello.txt
+===================================================================
+--- trunk/hello.txt	(revision 5)
++++ trunk/hello.txt	(revision 6)
+
+Property changes on: trunk/hello.txt
+___________________________________________________________________
+Deleted: my:multi
+## -1,2 +0,0 ##
+-line one
+-line two
+Modified: my:prop
+## -1 +1 ##
+-single value
+\ No newline at end of property
++changed value
+\ No newline at end of property
+Index: trunk/new-empty.txt
+===================================================================
