@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <info>
 <entry
-   path="repo"
    revision="6"
-   kind="dir">
+   kind="dir"
+   path="repo">
 <url>file:///tmp/gsvn-fixture/repo</url>
 <relative-url>^/</relative-url>
 <repository>

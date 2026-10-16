@@ -101,23 +101,35 @@ printf 'replaced\n' > 'amp&co.txt'
 "${SVN[@]}" propdel -q my:multi hello.txt
 "${SVN[@]}" commit -q --username bob -m "Delete, replace & add"
 setdate 6 "2026-06-07T08:09:10.000000Z"
+
+# --- r7: change on the branch; r8: merge it to trunk (svn:mergeinfo) -------
+"${SVN[@]}" checkout -q "$URL/branches/feature-1" "$WORK/wcb"
+printf 'branch line\n' >> "$WORK/wcb/a b.txt"
+"${SVN[@]}" commit -q --username alice -m "Change on branch" "$WORK/wcb"
+setdate 7 "2026-07-01T00:00:00.000000Z"
+"${SVN[@]}" update -q
+# Record the merge only (a b.txt is deleted on trunk): mergeinfo change.
+"${SVN[@]}" merge -q --record-only -c 7 "$URL/branches/feature-1" .
+"${SVN[@]}" commit -q --username bob -m "Record merge of r7"
+setdate 8 "2026-08-01T00:00:00.000000Z"
 cd "$HERE"
 
 # Run svn and rewrite the temp repo path to a stable fake one.
 cap() { local out=$1; shift; "${SVN[@]}" "$@" | sed "s#file://$REPO#$FAKE#g" > "$HERE/$out"; }
 
-cap local_info_root.xml   info --xml "$URL@HEAD"
-cap local_info_multi.xml  info --xml "$URL/trunk/a b.txt@5" "$URL/trunk/unicodé-日本.txt@HEAD" "$URL/trunk/at@sign.txt@HEAD" "$URL/branches@HEAD"
-cap local_list_trunk.xml  list --xml "$URL/trunk@HEAD"
-cap local_list_multi.xml  list --xml "$URL/branches@HEAD" "$URL/tags@HEAD" "$URL/trunk/sub%20dir@HEAD"
-cap local_log.xml         log --xml "$URL@HEAD"
-cap local_log_v.xml       log -v --xml "$URL@HEAD"
-cap local_blame.xml       blame --xml "$URL/trunk/hello.txt@HEAD"
-cap local_blame_range.xml blame --xml -r 3:HEAD "$URL/trunk/hello.txt@HEAD"
+# Most captures are pinned to r6 (the tests were written against r6).
+cap local_info_root.xml   info --xml "$URL@6"
+cap local_info_multi.xml  info --xml "$URL/trunk/a b.txt@5" "$URL/trunk/unicodé-日本.txt@6" "$URL/trunk/at@sign.txt@6" "$URL/branches@6"
+cap local_list_trunk.xml  list --xml "$URL/trunk@6"
+cap local_list_multi.xml  list --xml "$URL/branches@6" "$URL/tags@6" "$URL/trunk/sub%20dir@6"
+cap local_log.xml         log --xml "$URL@6"
+cap local_log_v.xml       log -v --xml "$URL@6"
+cap local_blame.xml       blame --xml "$URL/trunk/hello.txt@6"
+cap local_blame_range.xml blame --xml -r 3:6 "$URL/trunk/hello.txt@6"
 cap local_proplist_file.xml proplist -v --xml "$URL/trunk/hello.txt@4"
-cap local_proplist_dir.xml  proplist -v --xml "$URL/trunk@HEAD"
-cap local_proplist_none.xml proplist -v --xml "$URL/trunk/crlf.txt@HEAD"
-for r in 2 3 4 5 6; do
+cap local_proplist_dir.xml  proplist -v --xml "$URL/trunk@6"
+cap local_proplist_none.xml proplist -v --xml "$URL/trunk/crlf.txt@6"
+for r in 2 3 4 5 6 8; do
     cap "local_diff_r$r.diff" diff --internal-diff -c "$r" "$URL@$r"
 done
 cap local_diff_r1_6.diff  diff --internal-diff -r 1:6 "$URL/trunk@6"
