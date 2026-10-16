@@ -1,5 +1,8 @@
 //! Diff window (DESIGN.md §7).
 
+mod intra;
+mod model;
+
 use crate::app::Ctx;
 use std::rc::Rc;
 use svn_backend::DiffSpec;
