@@ -14,6 +14,7 @@ mod entry;
 mod filelist;
 mod nav;
 mod pathbar;
+mod store;
 mod tree;
 
 #[cfg(debug_assertions)]
@@ -449,7 +450,7 @@ impl Browser {
         {
             let f = with(|this| {
                 let text = this.filter_entry.text();
-                this.files.filter.set_search(Some(&text));
+                this.files.set_filter_text(&text);
             });
             self.filter_entry.connect_search_changed(move |_| f());
         }
@@ -463,7 +464,7 @@ impl Browser {
         {
             // Enter in the filter opens the first match.
             let f = with(|this| {
-                if this.files.sort_model.n_items() > 0 {
+                if this.files.n_shown() > 0 {
                     this.files.view.scroll_to(
                         0,
                         None::<&gtk::ColumnViewColumn>,
@@ -1168,7 +1169,7 @@ impl Browser {
         glib::idle_add_local_once(move || {
             let Some(this) = weak.upgrade() else { return };
             this.keep_top_queued.set(false);
-            if !this.state.borrow().list_touched && this.files.sort_model.n_items() > 0 {
+            if !this.state.borrow().list_touched && this.files.n_shown() > 0 {
                 this.files.view.scroll_to(0, None::<&gtk::ColumnViewColumn>, gtk::ListScrollFlags::NONE, None);
             }
         });

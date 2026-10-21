@@ -78,7 +78,7 @@ fn run(b: &Rc<Browser>, cmd: &str) {
         }
         "revpopover" => b.rev_button.popup(),
         "dump" => {
-            let n = b.files.sort_model.n_items();
+            let n = b.files.n_shown();
             let pending = b.files.sort_model.pending();
             let first: Vec<String> = (0..n.min(arg.parse().unwrap_or(5)))
                 .filter_map(|i| b.files.item(i))
@@ -95,13 +95,14 @@ fn run(b: &Rc<Browser>, cmd: &str) {
 
 fn filter_time(b: &Rc<Browser>, text: &str) {
     let t = std::time::Instant::now();
-    b.files.filter.set_search(Some(text));
+    b.files.set_filter_text(text);
     let sync = t.elapsed();
     let text = text.to_owned();
-    let report = move |model: &gtk::SortListModel| {
+    let shown = b.files.filter_model.clone();
+    let report = move |_: &gtk::SortListModel| {
         eprintln!(
             "filtertime {text:?}: {} matches, filter {:.1} ms, sorted after {:.1} ms",
-            model.n_items(),
+            shown.n_items(),
             sync.as_secs_f64() * 1000.0,
             t.elapsed().as_secs_f64() * 1000.0,
         );

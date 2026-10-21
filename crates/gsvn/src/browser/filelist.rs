@@ -1,7 +1,13 @@
 //! The file list: a `ColumnView` over
-//! `SortListModel(FilterListModel(ListStore))` (DESIGN.md §5.2).
+//! `FilterListModel(SortListModel(EntryStore))` (DESIGN.md §5.2).
+//!
+//! The filter sits above the sort so that typing in the filter never
+//! re-sorts: the store is sorted once per listing, and filtering only
+//! hides rows of the sorted list (DESIGN.md §13: filter < 50 ms at 100k).
 
 use super::entry::{self, EntryData, EntryKind, EntryObject};
+use super::nav;
+use super::store::EntryStore;
 use crate::common;
 use gtk::{gio, glib, prelude::*};
 use std::cell::RefCell;
@@ -12,7 +18,9 @@ use std::rc::Rc;
 pub struct FileList {
     pub scrolled: gtk::ScrolledWindow,
     pub view: gtk::ColumnView,
-    pub filter: gtk::StringFilter,
+    filter: gtk::CustomFilter,
+    /// Lower-cased filter text; empty = no filter.
+    needle: Rc<RefCell<String>>,
     pub filter_model: gtk::FilterListModel,
     pub sort_model: gtk::SortListModel,
     pub selection: gtk::SingleSelection,
@@ -39,19 +47,11 @@ pub type ContextHandler = Rc<dyn Fn(u32, &gtk::Widget, f64, f64)>;
 
 impl FileList {
     pub fn new(on_context: ContextHandler) -> Self {
-        let filter = gtk::StringFilter::builder()
-            .expression(gtk::PropertyExpression::new(
-                EntryObject::static_type(),
-                None::<&gtk::Expression>,
-                "name",
-            ))
-            .ignore_case(true)
-            .match_mode(gtk::StringFilterMatchMode::Substring)
-            .build();
-        let filter_model = gtk::FilterListModel::builder()
-            .filter(&filter)
-            .incremental(false)
-            .build();
+        // No match function while the filter is empty: GTK then passes
+        // every item through without calling into Rust.
+        let filter = gtk::CustomFilter::new(|_| true);
+        filter.unset_filter_func();
+        let needle = Rc::new(RefCell::new(String::new()));
 
         let view = gtk::ColumnView::builder()
             .show_column_separators(false)
@@ -129,12 +129,16 @@ impl FileList {
             multi.append(s);
         }
         let sort_model = gtk::SortListModel::builder()
-            .model(&filter_model)
             .sorter(&multi)
             .incremental(true)
             .build();
-        let selection = gtk::SingleSelection::builder()
+        let filter_model = gtk::FilterListModel::builder()
             .model(&sort_model)
+            .filter(&filter)
+            .incremental(false)
+            .build();
+        let selection = gtk::SingleSelection::builder()
+            .model(&filter_model)
             .autoselect(false)
             .can_unselect(true)
             .build();
@@ -153,18 +157,52 @@ impl FileList {
             scrolled,
             view,
             filter,
+            needle,
             filter_model,
             sort_model,
             selection,
         }
     }
 
-    pub fn set_store(&self, store: &gio::ListStore) {
-        self.filter_model.set_model(Some(store));
+    pub fn set_store(&self, store: &EntryStore) {
+        self.sort_model.set_model(Some(store));
+    }
+
+    /// Show only entries whose name contains `text` (ignoring case).
+    pub fn set_filter_text(&self, text: &str) {
+        let new = text.to_lowercase();
+        let old = self.needle.replace(new.clone());
+        if new == old {
+            return;
+        }
+        if new.is_empty() {
+            self.filter.unset_filter_func();
+            return;
+        }
+        if old.is_empty() {
+            let needle = self.needle.clone();
+            self.filter.set_filter_func(move |obj| {
+                obj.downcast_ref::<EntryObject>()
+                    .is_some_and(|e| nav::contains_ignore_case(e.name(), &needle.borrow()))
+            });
+            return;
+        }
+        self.filter.changed(if new.contains(old.as_str()) {
+            gtk::FilterChange::MoreStrict
+        } else if old.contains(new.as_str()) {
+            gtk::FilterChange::LessStrict
+        } else {
+            gtk::FilterChange::Different
+        });
+    }
+
+    /// Entries shown (after filtering).
+    pub fn n_shown(&self) -> u32 {
+        self.filter_model.n_items()
     }
 
     pub fn item(&self, pos: u32) -> Option<EntryObject> {
-        self.sort_model.item(pos).and_downcast()
+        self.filter_model.item(pos).and_downcast()
     }
 
     pub fn selected(&self) -> Option<EntryObject> {
@@ -174,7 +212,7 @@ impl FileList {
     /// Select and reveal the entry called `name`. Returns false if it is
     /// not (yet) in the list.
     pub fn select_name(&self, name: &str) -> bool {
-        let n = self.sort_model.n_items();
+        let n = self.n_shown();
         let pos = (0..n).find(|&i| self.item(i).is_some_and(|e| e.name() == name));
         match pos {
             Some(pos) => {
