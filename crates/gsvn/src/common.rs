@@ -153,18 +153,6 @@ pub fn follow_style_scheme(buffer: &sourceview5::Buffer) {
     manager.connect_dark_notify(apply);
 }
 
-/// Temporary window for modules that are not implemented yet.
-pub fn placeholder_window(ctx: &Rc<Ctx>, title: &str, text: &str) {
-    let window = new_window(ctx, "placeholder", title, (600, 400));
-    let view = adw::ToolbarView::new();
-    view.add_top_bar(&adw::HeaderBar::new());
-    view.set_content(Some(
-        &adw::StatusPage::builder().title(title).description(text).build(),
-    ));
-    window.set_content(Some(&view));
-    window.present();
-}
-
 /// The shared primary menu (☰) model: New Window, About gsvn. Windows may
 /// prepend their own sections with `menu.prepend_section`.
 pub fn main_menu() -> gtk::gio::Menu {
