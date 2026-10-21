@@ -174,14 +174,16 @@ pub fn follow_style_scheme(buffer: &sourceview5::Buffer) {
     manager.connect_dark_notify(apply);
 }
 
-/// The shared primary menu (☰) model: New Window, About gsvn. Windows may
-/// prepend their own sections with `menu.prepend_section`.
+/// The shared primary menu (☰) model: New Window, Keyboard Shortcuts,
+/// About gsvn. Windows may prepend their own sections with
+/// `menu.prepend_section`.
 pub fn main_menu() -> gtk::gio::Menu {
     let menu = gtk::gio::Menu::new();
     let section = gtk::gio::Menu::new();
     section.append(Some("_New Window"), Some("app.new-window"));
     menu.append_section(None, &section);
     let section = gtk::gio::Menu::new();
+    section.append(Some("_Keyboard Shortcuts"), Some("app.shortcuts"));
     section.append(Some("_About gsvn"), Some("app.about"));
     menu.append_section(None, &section);
     menu

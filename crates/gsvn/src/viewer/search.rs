@@ -163,6 +163,18 @@ impl Search {
         self.entry.set_text(text);
     }
 
+    /// Ctrl+G / Ctrl+Shift+G: next or previous match of the current
+    /// search, reopening the bar if it was closed; opens it when there is
+    /// no search text yet.
+    pub fn find_next(&self, forward: bool) {
+        if self.entry.text().is_empty() {
+            self.open();
+            return;
+        }
+        self.bar.set_search_mode(true);
+        self.step(forward);
+    }
+
     fn step(&self, forward: bool) {
         let buffer = self.view.buffer();
         let (start, end) = buffer.selection_bounds().unwrap_or_else(|| {

@@ -293,16 +293,7 @@ impl DiffWindow {
         // (which bind Alt+Up/Down and Ctrl+PageUp/Down) don't eat them.
         let shortcuts = gtk::ShortcutController::new();
         shortcuts.set_propagation_phase(gtk::PropagationPhase::Capture);
-        for (trigger, action) in [
-            ("<Control>t", "win.side-by-side"),
-            ("<Alt>Up|<Control>Page_Up", "win.prev-file"),
-            ("<Alt>Down|<Control>Page_Down", "win.next-file"),
-        ] {
-            shortcuts.add_shortcut(gtk::Shortcut::new(
-                gtk::ShortcutTrigger::parse_string(trigger),
-                Some(gtk::NamedAction::new(action)),
-            ));
-        }
+        crate::shortcuts::add_to(&shortcuts, &crate::shortcuts::DIFF);
         window.add_controller(shortcuts);
     }
 

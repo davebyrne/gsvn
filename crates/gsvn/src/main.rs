@@ -7,6 +7,7 @@ mod diff;
 mod e2e;
 mod log;
 mod settings;
+mod shortcuts;
 mod start;
 mod viewer;
 

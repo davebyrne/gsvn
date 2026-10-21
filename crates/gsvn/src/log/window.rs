@@ -504,13 +504,7 @@ impl LogWindow {
 
         let shortcuts = gtk::ShortcutController::new();
         shortcuts.set_scope(gtk::ShortcutScope::Managed);
-        for (accel, action) in [
-            ("F5", "log.refresh"),
-            ("<Control>r", "log.refresh"),
-            ("<Control>f", "log.focus-search"),
-        ] {
-            shortcuts.add_shortcut(shortcut(accel, action));
-        }
+        crate::shortcuts::add_to(&shortcuts, &crate::shortcuts::LOG);
         self.window.add_controller(shortcuts);
 
         let copy = gtk::ShortcutController::new();

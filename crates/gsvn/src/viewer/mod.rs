@@ -133,7 +133,7 @@ impl Viewer {
         mode_box.append(&blame_button);
         let history_button = gtk::Button::builder()
             .icon_name("document-open-recent-symbolic")
-            .tooltip_text("History")
+            .tooltip_text("Show Log (Ctrl+Shift+L)")
             .action_name("viewer.history")
             .build();
         let save_button = gtk::Button::builder()
@@ -160,7 +160,7 @@ impl Viewer {
         goto_box.append(&goto_go);
         let goto_button = gtk::MenuButton::builder()
             .icon_name("go-jump-symbolic")
-            .tooltip_text("Go to Line (Ctrl+L)")
+            .tooltip_text("Go to Line (Ctrl+I)")
             .popover(&gtk::Popover::builder().child(&goto_box).build())
             .build();
 
@@ -455,6 +455,16 @@ impl Viewer {
                     this.search.open();
                 }
             }),
+            simple("find-next", |this| {
+                if this.content.get() == ContentState::Text {
+                    this.search.find_next(true);
+                }
+            }),
+            simple("find-previous", |this| {
+                if this.content.get() == ContentState::Text {
+                    this.search.find_next(false);
+                }
+            }),
             simple("goto-line", |this| {
                 if this.content.get() == ContentState::Text {
                     this.goto_button.popup();
@@ -487,18 +497,7 @@ impl Viewer {
         self.window.insert_action_group("viewer", Some(&group));
 
         let shortcuts = gtk::ShortcutController::new();
-        for (accel, action) in [
-            ("<Control>f", "viewer.search"),
-            ("<Control>l", "viewer.goto-line"),
-            ("<Control>g", "viewer.goto-line"),
-            ("<Control>s", "viewer.save-as"),
-            ("<Control><Shift>s", "viewer.save-as"),
-        ] {
-            shortcuts.add_shortcut(gtk::Shortcut::new(
-                gtk::ShortcutTrigger::parse_string(accel),
-                Some(gtk::NamedAction::new(action)),
-            ));
-        }
+        crate::shortcuts::add_to(&shortcuts, &crate::shortcuts::VIEWER);
         self.window.add_controller(shortcuts);
     }
 
