@@ -1259,13 +1259,23 @@ impl Browser {
 
     fn bookmark(&self, url: &RepoUrl) {
         let Some(loc) = self.state.borrow().loc.clone() else { return };
-        let name = match (self.root(), url.name()) {
-            (Some(root), _) if *url == root => root.name(),
-            (_, name) if !name.is_empty() => name,
-            _ => decode(url.as_str()),
-        };
+        let name = bookmark_name(self.root().as_ref(), url);
         let rev = (!loc.follow_head).then_some(loc.rev);
-        self.ctx.settings.add_bookmark(Bookmark {
+        let settings = &self.ctx.settings;
+        if settings.is_bookmarked(url.as_str(), rev) {
+            // Ctrl+D again: offer to remove it rather than adding a duplicate.
+            let toast = adw::Toast::builder()
+                .title(glib::markup_escape_text(&format!("“{name}” is already bookmarked")))
+                .button_label("_Remove")
+                .timeout(5)
+                .build();
+            let ctx = self.ctx.clone();
+            let url = url.as_str().to_owned();
+            toast.connect_button_clicked(move |_| ctx.settings.remove_bookmark(&url, rev));
+            self.toasts.add_toast(toast);
+            return;
+        }
+        settings.add_bookmark(Bookmark {
             name: name.clone(),
             url: url.as_str().to_owned(),
             rev,
@@ -1330,12 +1340,22 @@ fn canonical(root: &RepoUrl, url: &RepoUrl) -> RepoUrl {
     }
 }
 
+/// Default bookmark name: the repository name at its root, else the
+/// last path segment, else the whole URL.
+fn bookmark_name(root: Option<&RepoUrl>, url: &RepoUrl) -> String {
+    match (root, url.name()) {
+        (Some(root), _) if url == root => root.name(),
+        (_, name) if !name.is_empty() => name,
+        _ => decode(url.as_str()),
+    }
+}
+
 /// `12345` → `12,345`.
 fn fmt_count(n: u32) -> String {
     let digits = n.to_string();
     let mut out = String::with_capacity(digits.len() + digits.len() / 3);
     for (i, c) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i) % 3 == 0 {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
             out.push(',');
         }
         out.push(c);
@@ -1486,6 +1506,14 @@ mod tests {
         assert_eq!(fmt_count(1_234_567), "1,234,567");
         assert_eq!(items(1), "1 item");
         assert_eq!(items(12345), "12,345 items");
+    }
+
+    #[test]
+    fn bookmark_names() {
+        let root = RepoUrl::parse("http://h/svn/small").unwrap();
+        assert_eq!(bookmark_name(Some(&root), &root), "small");
+        assert_eq!(bookmark_name(Some(&root), &root.join("trunk/doc dir")), "doc dir");
+        assert_eq!(bookmark_name(None, &root.join("trunk")), "trunk");
     }
 
     #[test]
