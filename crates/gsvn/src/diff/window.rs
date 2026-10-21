@@ -871,7 +871,7 @@ fn reset_scroll(sw: &gtk::ScrolledWindow) {
 fn files_label(n: u32, suffix: &str) -> String {
     match n {
         1 => format!("1 file{suffix}"),
-        n => format!("{n} files{suffix}"),
+        n => format!("{} files{suffix}", common::group_thousands(n as usize)),
     }
 }
 
@@ -1212,6 +1212,7 @@ mod tests {
         assert_eq!(files_label(1, ""), "1 file");
         assert!(large_diff_title(3, 6_000_000).starts_with("This diff is large (3 files, ~6"));
         assert_eq!(files_label(3, "…"), "3 files…");
+        assert_eq!(files_label(21_400, ""), "21\u{202F}400 files");
         assert_eq!(file_name("a/b/c.rs"), "c.rs");
     }
 }

@@ -170,19 +170,6 @@ fn same_run(a: Slot, b: Slot) -> bool {
     a == b && a != Slot::Pending
 }
 
-/// `1234567` → `1 234 567` with narrow no-break spaces.
-pub fn group_thousands(n: usize) -> String {
-    let digits = n.to_string();
-    let mut out = String::with_capacity(digits.len() + digits.len() / 3 * 3);
-    for (i, c) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i).is_multiple_of(3) {
-            out.push('\u{202F}');
-        }
-        out.push(c);
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -268,13 +255,5 @@ mod tests {
         assert_eq!(m.age(20), 1.0);
         assert_eq!(m.age(15), 0.5);
         assert_eq!(model(&[Some(4)]).age(4), 1.0);
-    }
-
-    #[test]
-    fn thousands() {
-        assert_eq!(group_thousands(0), "0");
-        assert_eq!(group_thousands(999), "999");
-        assert_eq!(group_thousands(1234), "1\u{202F}234");
-        assert_eq!(group_thousands(1234567), "1\u{202F}234\u{202F}567");
     }
 }
