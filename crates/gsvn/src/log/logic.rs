@@ -221,17 +221,16 @@ pub fn is_end_of_history(code: Option<u32>) -> bool {
 /// The diff to open for the selected revisions of the log of `url@peg`
 /// (sorted or not). `None` unless exactly one or two are selected.
 ///
-/// One revision diffs against its predecessor as `-r N-1:N URL@PEG`
-/// rather than `-c N URL@N`: the log follows renames, and `URL@N` doesn't
-/// exist for revisions from before a rename, whereas a peg at `PEG` lets svn
-/// trace the node back.
+/// One revision diffs as `-c N URL@PEG` ([`DiffSpec::ChangeAt`]) rather
+/// than `-c N URL@N`: the log follows renames, and `URL@N` doesn't exist for
+/// revisions from before a rename, whereas a peg at `PEG` lets svn trace the
+/// node back.
 pub fn revision_diff(url: &RepoUrl, peg: RevNum, selected: &[RevNum]) -> Option<DiffSpec> {
     match *selected {
-        [rev] if rev > 0 => Some(DiffSpec::Range {
+        [rev] if rev > 0 => Some(DiffSpec::ChangeAt {
             url: url.clone(),
             peg,
-            from: rev - 1,
-            to: rev,
+            rev,
         }),
         [a, b] if a != b => Some(DiffSpec::Range {
             url: url.clone(),
@@ -440,7 +439,12 @@ mod tests {
         assert_eq!(revision_diff(&u, 50, &[0]), None);
         assert_eq!(
             revision_diff(&u, 50, &[17]),
-            Some(DiffSpec::Range { url: u.clone(), peg: 50, from: 16, to: 17 })
+            Some(DiffSpec::ChangeAt { url: u.clone(), peg: 50, rev: 17 })
+        );
+        // The newest revision is its own peg.
+        assert_eq!(
+            revision_diff(&u, 50, &[50]),
+            Some(DiffSpec::ChangeAt { url: u.clone(), peg: 50, rev: 50 })
         );
         let two = Some(DiffSpec::Range { url: u.clone(), peg: 50, from: 12, to: 40 });
         assert_eq!(revision_diff(&u, 50, &[40, 12]), two);

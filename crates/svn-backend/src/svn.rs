@@ -247,6 +247,21 @@ fn args<const N: usize>(a: [&str; N]) -> Vec<String> {
     a.iter().map(|s| (*s).to_owned()).collect()
 }
 
+/// The svn arguments for a diff, and the URL they run against.
+fn diff_args(spec: &DiffSpec) -> (&RepoUrl, Vec<String>) {
+    let (url, op, range, peg) = match spec {
+        DiffSpec::Change { url, rev } => (url, "-c", rev.to_string(), *rev),
+        DiffSpec::ChangeAt { url, peg, rev } => (url, "-c", rev.to_string(), *peg),
+        DiffSpec::Range { url, peg, from, to } => (url, "-r", format!("{from}:{to}"), *peg),
+    };
+    let a = args(["diff", "--internal-diff", op, &range, &url.with_peg(&Rev::Number(peg))]);
+    (url, a)
+}
+
+fn info_at_args(url: &RepoUrl, peg: RevNum, rev: RevNum) -> Vec<String> {
+    args(["info", "--xml", "-r", &rev.to_string(), &url.with_peg(&Rev::Number(peg))])
+}
+
 fn parse_failure(what: &str) -> SvnError {
     SvnError::new(ErrorKind::Parse, format!("svn {what} returned no result"))
 }
@@ -557,28 +572,7 @@ impl Svn {
     pub fn diff(&self, spec: &DiffSpec, prio: Priority) -> Stream<FileDiff> {
         let spec = spec.clone();
         self.spawn_stream(move |inner, ctx, b| {
-            let (url, a) = match &spec {
-                DiffSpec::Change { url, rev } => (
-                    url,
-                    args([
-                        "diff",
-                        "--internal-diff",
-                        "-c",
-                        &rev.to_string(),
-                        &url.with_peg(&Rev::Number(*rev)),
-                    ]),
-                ),
-                DiffSpec::Range { url, peg, from, to } => (
-                    url,
-                    args([
-                        "diff",
-                        "--internal-diff",
-                        "-r",
-                        &format!("{from}:{to}"),
-                        &url.with_peg(&Rev::Number(*peg)),
-                    ]),
-                ),
-            };
+            let (url, a) = diff_args(&spec);
             inner.execute(url, &a, prio, ctx, |r, stop| {
                 b.reset();
                 parse::diff(r, |f| {
@@ -590,9 +584,66 @@ impl Svn {
         })
     }
 
+    /// `svn info --xml -r REV URL@PEG`: the node that is `url` at `peg`, as
+    /// it was at `rev` (`rev <= peg`). svn follows renames and moves, so the
+    /// returned [`Info::url`] is the node's URL at `rev`, which may differ
+    /// from `url`. Use it to turn a path seen at a newer revision into the
+    /// path to view, browse or blame at an older one. Fails with `NotFound`
+    /// when the node did not exist yet at `rev`.
+    pub fn info_at(&self, url: &RepoUrl, peg: RevNum, rev: RevNum, prio: Priority) -> Job<Info> {
+        if peg == rev {
+            return self.info(url, &Rev::Number(rev), prio);
+        }
+        let url = url.clone();
+        self.spawn_job(move |inner, ctx| {
+            let a = info_at_args(&url, peg, rev);
+            let infos = inner.execute(&url, &a, prio, ctx, |r, _| parse::info(r))?;
+            let info = infos.into_iter().next().ok_or_else(|| parse_failure("info"))?;
+            // The result describes `info.url@rev`, so cache it under that.
+            inner.cache.put_info(info.url.as_str(), info.rev, info.clone());
+            Ok(info)
+        })
+    }
+
     /// Drop all cached data (HEAD-relative results are never cached, so this
     /// is only needed to free memory).
     pub fn clear_cache(&self) {
         self.inner.cache.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn url(s: &str) -> RepoUrl {
+        RepoUrl::parse(s).unwrap()
+    }
+
+    #[test]
+    fn diff_argument_construction() {
+        let u = url("http://h/r/trunk/new%20name.c");
+        let change = DiffSpec::Change { url: u.clone(), rev: 8 };
+        let (target, a) = diff_args(&change);
+        assert_eq!(target, &u);
+        assert_eq!(a, ["diff", "--internal-diff", "-c", "8", "http://h/r/trunk/new%20name.c@8"]);
+
+        let at = DiffSpec::ChangeAt { url: u.clone(), peg: 50, rev: 8 };
+        let (target, a) = diff_args(&at);
+        assert_eq!(target, &u);
+        assert_eq!(a, ["diff", "--internal-diff", "-c", "8", "http://h/r/trunk/new%20name.c@50"]);
+
+        let range = DiffSpec::Range { url: u.clone(), peg: 50, from: 3, to: 9 };
+        let (_, a) = diff_args(&range);
+        assert_eq!(a, ["diff", "--internal-diff", "-r", "3:9", "http://h/r/trunk/new%20name.c@50"]);
+    }
+
+    #[test]
+    fn info_at_argument_construction() {
+        let u = url("http://h/r/trunk/doc");
+        assert_eq!(
+            info_at_args(&u, 50, 20),
+            ["info", "--xml", "-r", "20", "http://h/r/trunk/doc@50"]
+        );
     }
 }

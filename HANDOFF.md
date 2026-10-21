@@ -171,13 +171,6 @@ Screenshots from the agents are in the session scratchpad under `/tmp/` and
 
 ## Known issues and gaps
 
-- **Renamed paths at older revisions:** `DiffSpec::Change { url, rev }` has
-  no separate peg, so blame's "Show Changes in rN", "Blame Previous" and
-  the log's "Browse at This Revision" fail for paths that were renamed since
-  rN. They show an error page rather than crashing. The log window works
-  around it with `Range { peg: self.peg, from: rev-1, to: rev }` for "Diff
-  with Previous". A proper fix needs a peg-aware `Change` (or an
-  `info(url@peg, -r rev)` call) in the backend.
 - **Log search** uses revision windows, because svn applies `-l` to
   revisions examined, not matches. A search with no matches across 200k
   revisions takes about 7 s, with progress shown. Search combined with
