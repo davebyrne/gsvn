@@ -84,7 +84,7 @@ impl FileList {
                 &on_context,
                 0.0,
                 false,
-                |d| Some(d.author.clone().unwrap_or_else(|| "—".into())),
+                |d| Some(d.author.as_deref().unwrap_or("—").to_owned()),
                 |_| None,
             ),
             &tiebreak(|a, b| cmp_opt(&a.author, &b.author)),
