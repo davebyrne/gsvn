@@ -97,6 +97,8 @@ struct Browser {
     state: RefCell<State>,
     /// Debug timing of the open → first browse.
     opened: Cell<Option<std::time::Instant>>,
+    /// A deferred [`Browser::keep_top`] is pending.
+    keep_top_queued: Cell<bool>,
 }
 
 impl Browser {
@@ -311,6 +313,7 @@ impl Browser {
                 list_touched: false,
             }),
             opened: Cell::new(Some(std::time::Instant::now())),
+            keep_top_queued: Cell::new(false),
         });
         *this_cell.borrow_mut() = Rc::downgrade(&this);
 
@@ -422,6 +425,13 @@ impl Browser {
         {
             let weak = Rc::downgrade(self);
             self.files.sort_model.connect_pending_notify(move |model| {
+                if model.pending() == 0
+                    && let Some(this) = weak.upgrade()
+                {
+                    // The incremental sort just moved the directories (which
+                    // arrive last) to the front; the view kept its anchor row.
+                    this.keep_top();
+                }
                 if model.pending() == 0
                     && let Some(this) = weak.upgrade()
                     && let Some(dir) = this.current_dir()
@@ -1126,11 +1136,21 @@ impl Browser {
         self.update_actions();
     }
 
-    /// Keep an untouched list at the top while it fills.
-    fn keep_top(&self) {
-        if !self.state.borrow().list_touched && self.files.sort_model.n_items() > 0 {
-            self.files.view.scroll_to(0, None::<&gtk::ColumnViewColumn>, gtk::ListScrollFlags::NONE, None);
+    /// Keep an untouched list at the top while it fills. Deferred to an
+    /// idle so it runs after the view has processed the model change (it
+    /// keeps its anchor row, which would undo an immediate scroll).
+    fn keep_top(self: &Rc<Self>) {
+        if self.keep_top_queued.replace(true) {
+            return;
         }
+        let weak = Rc::downgrade(self);
+        glib::idle_add_local_once(move || {
+            let Some(this) = weak.upgrade() else { return };
+            this.keep_top_queued.set(false);
+            if !this.state.borrow().list_touched && this.files.sort_model.n_items() > 0 {
+                this.files.view.scroll_to(0, None::<&gtk::ColumnViewColumn>, gtk::ListScrollFlags::NONE, None);
+            }
+        });
     }
 
     fn select_pending(self: &Rc<Self>) {
