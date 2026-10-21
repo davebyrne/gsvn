@@ -163,3 +163,29 @@ fn connection_refused_is_network() {
         .unwrap_err();
     assert_eq!((e.kind, e.code), (ErrorKind::Network, Some(111)));
 }
+
+/// `small` renamed trunk/src/util.c → helpers.c in r22 and trunk/docs →
+/// doc in r40.
+#[test]
+fn peg_revisions_follow_renames_in_small() {
+    require_http!();
+    let d = tempfile::tempdir().unwrap();
+    let svn = svn(&d);
+    let helpers = url("http://localhost:8080/svn/small/trunk/src/helpers.c");
+    let i = svn.info_at(&helpers, 50, 20, P).wait().unwrap();
+    assert_eq!(i.url.as_str(), "http://localhost:8080/svn/small/trunk/src/util.c");
+    let doc = url("http://localhost:8080/svn/small/trunk/doc");
+    let i = svn.info_at(&doc, 50, 39, P).wait().unwrap();
+    assert_eq!((i.url.as_str(), i.kind), ("http://localhost:8080/svn/small/trunk/docs", NodeKind::Dir));
+
+    assert!(svn
+        .diff(&DiffSpec::Change { url: helpers.clone(), rev: 8 }, P)
+        .collect_blocking()
+        .is_err());
+    let files = svn
+        .diff(&DiffSpec::ChangeAt { url: helpers, peg: 50, rev: 8 }, P)
+        .collect_blocking()
+        .unwrap();
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].path, "util.c");
+}

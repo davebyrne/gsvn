@@ -351,3 +351,104 @@ fn not_found_errors() {
     let e = svn.info(&missing, &Rev::Head, P).wait().unwrap_err();
     assert_eq!(e.kind, ErrorKind::NotFound, "{e:?}");
 }
+
+/// A second repository with a rename, for peg-revision tests:
+///
+/// | rev | change                                   |
+/// |-----|------------------------------------------|
+/// | 1   | mkdir /trunk                             |
+/// | 2   | add trunk/old.txt                        |
+/// | 3   | modify trunk/old.txt                     |
+/// | 4   | move trunk/old.txt → trunk/sub/new.txt   |
+/// | 5   | modify trunk/sub/new.txt                 |
+fn rename_repo() -> &'static Repo {
+    static REPO: OnceLock<Repo> = OnceLock::new();
+    REPO.get_or_init(|| {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("repo");
+        let cfg = dir.path().join("cfg");
+        let wc = dir.path().join("wc");
+        std::fs::create_dir(&cfg).unwrap();
+        let st = Command::new("svnadmin").arg("create").arg(&path).status().unwrap();
+        assert!(st.success());
+        let url = RepoUrl::parse(&format!("file://{}", path.display())).unwrap();
+        let d = dir.path();
+        let trunk = format!("{}/trunk", url.as_str());
+        run(&cfg, d, &["mkdir", "-m", "Create trunk", &trunk]);
+        run(&cfg, d, &["checkout", &trunk, wc.to_str().unwrap()]);
+        std::fs::write(wc.join("old.txt"), "one\n").unwrap();
+        run(&cfg, &wc, &["add", "old.txt"]);
+        run(&cfg, &wc, &["commit", "-m", "Add old"]);
+        std::fs::write(wc.join("old.txt"), "one\ntwo\n").unwrap();
+        run(&cfg, &wc, &["commit", "-m", "Edit old"]);
+        run(&cfg, &wc, &["mkdir", "sub"]);
+        run(&cfg, &wc, &["move", "old.txt", "sub/new.txt"]);
+        run(&cfg, &wc, &["commit", "-m", "Rename"]);
+        std::fs::write(wc.join("sub/new.txt"), "one\ntwo\nthree\n").unwrap();
+        run(&cfg, &wc, &["commit", "-m", "Edit new"]);
+        Repo {
+            _dir: dir,
+            path,
+            cfg,
+            url,
+        }
+    })
+}
+
+fn added_lines(f: &FileDiff) -> Vec<&str> {
+    let DiffContent::Text(hunks) = &f.content else {
+        panic!("expected text diff: {:?}", f.content);
+    };
+    hunks
+        .iter()
+        .flat_map(|h| &h.lines)
+        .filter(|l| l.kind == DiffLineKind::Added)
+        .map(|l| l.text.as_str())
+        .collect()
+}
+
+#[test]
+fn diff_change_at_peg_follows_rename() {
+    let r = rename_repo();
+    let svn = svn_for(r);
+    let new = r.url.join("trunk/sub/new.txt");
+    // The file did not exist under its new name at r3.
+    let e = svn
+        .diff(&DiffSpec::Change { url: new.clone(), rev: 3 }, P)
+        .collect_blocking()
+        .unwrap_err();
+    assert_eq!(e.kind, ErrorKind::NotFound, "{e:?}");
+    // Pegged at r5, svn traces it back to old.txt.
+    let files = svn
+        .diff(&DiffSpec::ChangeAt { url: new.clone(), peg: 5, rev: 3 }, P)
+        .collect_blocking()
+        .unwrap();
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].path, "old.txt");
+    assert_eq!(added_lines(&files[0]), ["two"]);
+    // peg == rev behaves like Change.
+    let files = svn
+        .diff(&DiffSpec::ChangeAt { url: new, peg: 5, rev: 5 }, P)
+        .collect_blocking()
+        .unwrap();
+    assert_eq!(added_lines(&files[0]), ["three"]);
+}
+
+#[test]
+fn info_at_resolves_url_at_older_revision() {
+    let r = rename_repo();
+    let svn = svn_for(r);
+    let new = r.url.join("trunk/sub/new.txt");
+    let i = svn.info_at(&new, 5, 3, P).wait().unwrap();
+    assert_eq!(i.url, r.url.join("trunk/old.txt"));
+    assert_eq!((i.rev, i.kind, i.repos_path.as_str()), (3, NodeKind::File, "/trunk/old.txt"));
+    // A revision after the rename keeps the name.
+    let i = svn.info_at(&new, 5, 4, P).wait().unwrap();
+    assert_eq!(i.url, new);
+    // peg == rev is plain info.
+    let i = svn.info_at(&new, 5, 5, P).wait().unwrap();
+    assert_eq!((i.url, i.rev), (new.clone(), 5));
+    // Before the file existed.
+    let e = svn.info_at(&new, 5, 1, P).wait().unwrap_err();
+    assert_eq!(e.kind, ErrorKind::NotFound, "{e:?}");
+}
