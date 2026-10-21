@@ -13,6 +13,8 @@
 //! GSVN_DIFF_QUIT=1          quit when loaded (after the shot, if any)
 //! GSVN_DIFF_TIMING=1        print timings and RSS to stderr
 //! GSVN_DIFF_LARGE_ROWS=N    large-file threshold override
+//! GSVN_DIFF_LIMIT=B[:L]     total size limit override (bytes[:lines], §7.3)
+//! GSVN_DIFF_LOAD_REST=1     press "Load the Rest" when loading pauses
 //! ```
 
 use super::window::{DiffWindow, FileItem};
@@ -27,6 +29,7 @@ pub struct Hooks {
     select: Option<u32>,
     side_by_side: bool,
     show_large: bool,
+    load_rest: bool,
     shot: Option<String>,
     quit: bool,
     pub timing: bool,
@@ -76,6 +79,7 @@ pub fn open(ctx: &Rc<Ctx>) -> bool {
         select: env("GSVN_DIFF_SELECT").and_then(|v| v.parse().ok()),
         side_by_side: env("GSVN_DIFF_SBS").is_some(),
         show_large: env("GSVN_DIFF_SHOW_LARGE").is_some(),
+        load_rest: env("GSVN_DIFF_LOAD_REST").is_some(),
         shot: env("GSVN_DIFF_SHOT"),
         quit: env("GSVN_DIFF_QUIT").is_some(),
         timing: env("GSVN_DIFF_TIMING").is_some(),
@@ -107,12 +111,22 @@ pub fn finished(window: &Rc<DiffWindow>) {
     let Some(hooks) = window.debug.borrow_mut().take() else {
         return;
     };
+    let paused = window.is_paused();
     if hooks.timing {
         let (first, total, n) = window.timings();
         eprintln!(
-            "diff: {n} files, first file after {first:?}, complete after {total:?}, RSS {:.1} MB",
+            "diff: {n} files, first file after {first:?}, {} after {total:?}, RSS {:.1} MB",
+            if paused { "paused" } else { "complete" },
             rss_mb()
         );
+    }
+    if paused && hooks.load_rest {
+        window.debug.replace(Some(Hooks {
+            load_rest: false,
+            ..hooks
+        }));
+        window.load_rest();
+        return;
     }
     if let Some(i) = hooks.select {
         window.select(i);
@@ -132,6 +146,7 @@ pub fn finished(window: &Rc<DiffWindow>) {
         select: None,
         side_by_side: false,
         show_large: false,
+        load_rest: false,
         ..hooks
     }));
     glib::timeout_add_local_once(Duration::from_millis(1500), move || {

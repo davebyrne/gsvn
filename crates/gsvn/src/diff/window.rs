@@ -1,6 +1,7 @@
 //! The diff window: file sidebar fed by the streamed diff, and a unified or
 //! side-by-side view of the selected file (DESIGN.md §7).
 
+use super::limit::{self, Budget, Incoming, Resume};
 use super::model::{self, FileStatus, FileSummary, LARGE_ROWS};
 use super::view::{Column, DiffView};
 use crate::app::Ctx;
@@ -23,6 +24,14 @@ pub struct FileItem {
     pub summary: FileSummary,
     /// The user confirmed rendering this large file.
     pub show_large: Cell<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BannerAction {
+    /// The diff failed part way: run it again.
+    Retry,
+    /// Loading paused at the size limit: load the rest.
+    LoadRest,
 }
 
 /// A built render model, ready to put into the views.
@@ -77,6 +86,14 @@ pub struct DiffWindow {
     generation: Cell<u64>,
     started: Cell<Instant>,
     first_file_at: Cell<Option<Instant>>,
+    /// Size of the received diff against the §7.3 limit.
+    budget: Cell<Budget>,
+    /// The user chose to load the whole diff.
+    unlimited: Cell<bool>,
+    /// Set while re-running the diff to load the rest after a pause.
+    resume: Cell<Option<Resume>>,
+    /// What the banner's button does.
+    banner_action: Cell<BannerAction>,
     #[cfg(debug_assertions)]
     pub(super) debug: RefCell<Option<super::debug::Hooks>>,
 }
@@ -153,6 +170,10 @@ impl DiffWindow {
             generation: Cell::new(0),
             started: Cell::new(Instant::now()),
             first_file_at: Cell::new(None),
+            budget: Cell::new(Budget::unlimited()),
+            unlimited: Cell::new(false),
+            resume: Cell::new(None),
+            banner_action: Cell::new(BannerAction::Retry),
             #[cfg(debug_assertions)]
             debug: RefCell::new(None),
         });
@@ -195,7 +216,10 @@ impl DiffWindow {
         let weak = Rc::downgrade(self);
         ui.banner.connect_button_clicked(move |_| {
             if let Some(this) = weak.upgrade() {
-                this.start();
+                match this.banner_action.get() {
+                    BannerAction::Retry => this.start(),
+                    BannerAction::LoadRest => this.load_rest(),
+                }
             }
         });
     }
@@ -273,63 +297,144 @@ impl DiffWindow {
 
     /// (Re)start the streaming diff from scratch.
     fn start(self: &Rc<Self>) {
+        self.ui.store.remove_all();
+        self.resume.set(None);
+        self.ui.outer.set_visible_child_name("loading");
+        self.ui.count_label.set_label("Loading…");
+        self.run();
+    }
+
+    /// Loading paused at the size limit: run svn again without a limit,
+    /// skipping the files already in the list.
+    pub(super) fn load_rest(self: &Rc<Self>) {
+        self.unlimited.set(true);
+        self.resume.set(Some(Resume::new(self.ui.store.n_items())));
+        self.ui
+            .count_label
+            .set_label(&files_label(self.ui.store.n_items(), "…"));
+        self.run();
+    }
+
+    fn run(self: &Rc<Self>) {
         self.stop_task();
         let ui = &self.ui;
-        ui.store.remove_all();
         ui.banner.set_revealed(false);
-        ui.outer.set_visible_child_name("loading");
         ui.spinner.set_visible(true);
         ui.cancel_button.set_visible(true);
-        ui.count_label.set_label("Loading…");
         self.started.set(Instant::now());
         self.first_file_at.set(None);
+        self.budget.set(if self.unlimited.get() {
+            Budget::unlimited()
+        } else {
+            limit_budget()
+        });
 
         let mut stream = self.ctx.svn.diff(&self.spec, Priority::Interactive);
         let weak = Rc::downgrade(self);
         let task = glib::spawn_future_local(async move {
             let mut error = None;
+            let mut paused = false;
             while let Some(batch) = stream.next().await {
                 let Some(this) = weak.upgrade() else { return };
                 match batch {
-                    Ok(files) => this.append(files),
+                    Ok(files) => {
+                        if !this.append(files) {
+                            paused = true;
+                            break;
+                        }
+                    }
                     Err(err) => {
                         error = Some(err);
                         break;
                     }
                 }
             }
+            // Dropping the stream stops svn.
             drop(stream);
             if let Some(this) = weak.upgrade() {
-                this.finish(error);
+                if paused {
+                    this.pause();
+                } else {
+                    this.finish(error);
+                }
             }
         });
         self.task.replace(Some(task));
     }
 
-    fn append(self: &Rc<Self>, files: Vec<FileDiff>) {
-        if files.is_empty() {
-            return;
-        }
+    /// Add received files to the list; `false` once the size limit is
+    /// reached (the stream should stop).
+    fn append(self: &Rc<Self>, files: Vec<FileDiff>) -> bool {
         let ui = &self.ui;
-        let objects: Vec<glib::BoxedAnyObject> = files
-            .into_iter()
-            .map(|f| {
-                glib::BoxedAnyObject::new(FileItem {
-                    summary: model::summarize(&f),
-                    diff: Arc::new(f),
-                    show_large: Cell::new(false),
-                })
-            })
-            .collect();
+        let mut budget = self.budget.get();
+        let mut resume = self.resume.get();
+        let mut objects = Vec::with_capacity(files.len());
+        let mut more = true;
+        for f in files {
+            if let Some(r) = &mut resume {
+                let store = &ui.store;
+                let same = |i| {
+                    item_at(store, i).is_some_and(|o| o.borrow::<FileItem>().diff.path == f.path)
+                };
+                match r.next(same) {
+                    Incoming::Skip => continue,
+                    Incoming::Keep => {}
+                    Incoming::Diverged => {
+                        // svn's output changed since the first run: drop
+                        // the stored files from here on.
+                        let kept = r.kept();
+                        store.splice(kept, store.n_items() - kept, &[] as &[glib::Object]);
+                    }
+                }
+            }
+            if budget.exceeded() {
+                more = false;
+                break;
+            }
+            budget.add(&f);
+            objects.push(glib::BoxedAnyObject::new(FileItem {
+                summary: model::summarize(&f),
+                diff: Arc::new(f),
+                show_large: Cell::new(false),
+            }));
+        }
+        self.budget.set(budget);
+        self.resume.set(resume);
+        if objects.is_empty() {
+            return more;
+        }
         let first = ui.store.n_items() == 0;
         ui.store.extend_from_slice(&objects);
         ui.count_label
             .set_label(&files_label(ui.store.n_items(), "…"));
-        if first {
+        if first || self.first_file_at.get().is_none() {
             self.first_file_at.set(Some(Instant::now()));
+        }
+        if first {
             ui.outer.set_visible_child_name("main");
         }
         self.update_nav();
+        more
+    }
+
+    /// The size limit was reached and svn stopped (DESIGN.md §7.3).
+    fn pause(self: &Rc<Self>) {
+        self.task.take();
+        let ui = &self.ui;
+        ui.spinner.set_visible(false);
+        ui.cancel_button.set_visible(false);
+        let n = ui.store.n_items();
+        ui.count_label.set_label(&files_label(n, " (paused)"));
+        ui.banner
+            .set_title(&glib::markup_escape_text(&large_diff_title(
+                n,
+                self.budget.get().bytes,
+            )));
+        ui.banner.set_button_label(Some("Load the _Rest"));
+        self.banner_action.set(BannerAction::LoadRest);
+        ui.banner.set_revealed(true);
+        #[cfg(debug_assertions)]
+        super::debug::finished(self);
     }
 
     fn finish(self: &Rc<Self>, error: Option<SvnError>) {
@@ -354,6 +459,8 @@ impl DiffWindow {
             }
             Some(err) => {
                 ui.count_label.set_label(&files_label(n, " (incomplete)"));
+                ui.banner.set_button_label(Some("_Retry"));
+                self.banner_action.set(BannerAction::Retry);
                 ui.banner.set_title(&glib::markup_escape_text(&format!(
                     "The diff is incomplete: {}",
                     err.to_string().lines().next().unwrap_or_default()
@@ -461,6 +568,14 @@ impl DiffWindow {
     #[cfg(debug_assertions)]
     pub(super) fn gtk_window(&self) -> &adw::ApplicationWindow {
         &self.ui.window
+    }
+
+    /// Loading is paused at the size limit.
+    #[cfg(debug_assertions)]
+    pub(super) fn is_paused(&self) -> bool {
+        self.task.borrow().is_none()
+            && self.ui.banner.is_revealed()
+            && self.banner_action.get() == BannerAction::LoadRest
     }
 
     #[cfg(debug_assertions)]
@@ -668,6 +783,31 @@ impl DiffWindow {
         });
         self.file_task.replace(Some(task));
     }
+}
+
+/// The §7.3 limit (debug builds: `GSVN_DIFF_LIMIT=BYTES[:LINES]`).
+fn limit_budget() -> Budget {
+    #[cfg(debug_assertions)]
+    if let Some(v) = std::env::var("GSVN_DIFF_LIMIT")
+        .ok()
+        .filter(|v| !v.is_empty())
+    {
+        let (bytes, lines) = v.split_once(':').unwrap_or((&v, ""));
+        return Budget::new(
+            bytes.parse().unwrap_or(limit::LIMIT_BYTES),
+            lines.parse().unwrap_or(limit::LIMIT_LINES),
+        );
+    }
+    Budget::new(limit::LIMIT_BYTES, limit::LIMIT_LINES)
+}
+
+/// Banner text when loading paused at the limit.
+fn large_diff_title(files: u32, bytes: u64) -> String {
+    format!(
+        "This diff is large ({}, ~{}). Load the rest?",
+        files_label(files, ""),
+        common::format_size(bytes)
+    )
 }
 
 fn large_rows() -> usize {
@@ -1022,6 +1162,7 @@ mod tests {
         assert_eq!(file_url(&file, "Makefile").as_str(), "https://h/r/Makefile");
 
         assert_eq!(files_label(1, ""), "1 file");
+        assert!(large_diff_title(3, 6_000_000).starts_with("This diff is large (3 files, ~6"));
         assert_eq!(files_label(3, "…"), "3 files…");
         assert_eq!(file_name("a/b/c.rs"), "c.rs");
     }
