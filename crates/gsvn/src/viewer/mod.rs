@@ -202,7 +202,6 @@ impl Viewer {
         let line_menu = gtk::PopoverMenu::from_model(None::<&gio::MenuModel>);
         line_menu.set_has_arrow(true);
         line_menu.set_position(gtk::PositionType::Right);
-        line_menu.set_parent(&view);
         let scrolled = gtk::ScrolledWindow::builder().child(&view).vexpand(true).build();
 
         let search = Search::new(&view, &buffer);
@@ -225,6 +224,9 @@ impl Viewer {
         let body = gtk::Box::new(gtk::Orientation::Vertical, 0);
         body.append(&banner);
         body.append(&stack);
+        // Not parented to the text view: there the menu was sized too
+        // small and its last item cut off.
+        line_menu.set_parent(&body);
 
         // Status bar: file info on the left, blame progress/controls right.
         let encoding_label = gtk::Label::builder().css_classes(["dim-label", "caption"]).build();
@@ -1150,9 +1152,15 @@ impl Viewer {
             .view
             .buffer_to_window_coords(gtk::TextWindowType::Widget, 0, loc.y());
         let width = self.gutter.width();
+        let Some(parent) = self.line_menu.parent() else { return };
+        let Some(at) = self.view.compute_point(&parent, &gtk::graphene::Point::new(0.0, y as f32)) else { return };
         self.line_menu.set_menu_model(Some(&menu));
-        self.line_menu
-            .set_pointing_to(Some(&gdk::Rectangle::new(0, y, width, loc.height().max(1))));
+        self.line_menu.set_pointing_to(Some(&gdk::Rectangle::new(
+            at.x() as i32,
+            at.y() as i32,
+            width,
+            loc.height().max(1),
+        )));
         self.line_menu.popup();
     }
 
