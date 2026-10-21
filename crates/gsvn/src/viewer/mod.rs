@@ -1226,10 +1226,17 @@ impl Viewer {
         let bytes = match data {
             Some(bytes) => bytes,
             None => {
+                // Shown until the download ends (not for its full timeout).
+                let progress = adw::Toast::builder()
+                    .title(glib::markup_escape_text(&format!("Downloading “{name}”…")))
+                    .timeout(0)
+                    .build();
                 if let Some(this) = weak.upgrade() {
-                    this.toast(&format!("Downloading “{name}”…"));
+                    this.toasts.add_toast(progress.clone());
                 }
-                match svn.cat(&url, rev, None, Priority::Normal).result().await {
+                let result = svn.cat(&url, rev, None, Priority::Normal).result().await;
+                progress.dismiss();
+                match result {
                     Ok(out) => glib::Bytes::from_owned(out.data),
                     Err(err) => {
                         if !err.is_cancelled()
