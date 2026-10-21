@@ -67,6 +67,16 @@ case "$scenario" in
       echo "Authentication failed" >&2
       exit 1
     fi ;;
+  slowauth)
+    sleep 0.4
+    echo "svn: E170013: Unable to connect to a repository at URL '$base'" >&2
+    echo "svn: E215004: No more credentials or we tried too many times." >&2
+    exit 1 ;;
+  slowcert)
+    sleep 0.4
+    echo "svn: E170013: Unable to connect to a repository at URL '$base'" >&2
+    echo "svn: E230001: Server SSL certificate verification failed: issuer is not trusted" >&2
+    exit 1 ;;
   cert)
     case ",$trust," in *,unknown-ca,*) case ",$trust," in *,cn-mismatch,*) info; exit 0 ;; esac ;; esac
     echo "svn: E170013: Unable to connect to a repository at URL '$base'" >&2
@@ -540,6 +550,37 @@ fn auth_declined_fails_all_waiting_jobs() {
 }
 
 #[test]
+fn auth_declined_fails_jobs_running_at_the_time() {
+    // A job whose svn was still running when the prompt was declined fails
+    // too, instead of prompting again; a job started afterwards prompts.
+    let f = Fake::new();
+    let svn = Svn::new(SvnConfig {
+        interactive: true,
+        ..f.config()
+    });
+    let prompts = svn.auth_prompts();
+    let count = Arc::new(AtomicUsize::new(0));
+    {
+        let count = count.clone();
+        thread::spawn(move || {
+            while let Ok(p) = prompts.recv_blocking() {
+                count.fetch_add(1, Ordering::SeqCst);
+                p.respond(None);
+            }
+        });
+    }
+    let slow = svn.info(&url("http://running.test/slowauth/a"), &Rev::Head, Priority::Normal);
+    let fast = svn.info(&url("http://running.test/auth/b"), &Rev::Head, Priority::Normal);
+    assert_eq!(fast.wait().unwrap_err().kind, ErrorKind::Auth);
+    assert_eq!(slow.wait().unwrap_err().kind, ErrorKind::Auth);
+    assert_eq!(count.load(Ordering::SeqCst), 1);
+    // A new job (e.g. Retry) asks again.
+    let again = svn.info(&url("http://running.test/auth/c"), &Rev::Head, Priority::Normal);
+    assert_eq!(again.wait().unwrap_err().kind, ErrorKind::Auth);
+    assert_eq!(count.load(Ordering::SeqCst), 2);
+}
+
+#[test]
 fn auth_dropped_prompt_counts_as_cancel() {
     let f = Fake::new();
     let svn = Svn::new(SvnConfig {
@@ -647,16 +688,29 @@ fn cert_declined_and_non_interactive() {
         ..f.config()
     });
     let prompts = svn.cert_prompts();
-    thread::spawn(move || {
-        while let Ok(p) = prompts.recv_blocking() {
-            p.respond(false);
-        }
-    });
+    let count = Arc::new(AtomicUsize::new(0));
+    {
+        let count = count.clone();
+        thread::spawn(move || {
+            while let Ok(p) = prompts.recv_blocking() {
+                count.fetch_add(1, Ordering::SeqCst);
+                p.respond(false);
+            }
+        });
+    }
     let e = svn
         .info(&url("https://nocert.test/cert/x"), &Rev::Head, Priority::Normal)
         .wait()
         .unwrap_err();
     assert_eq!(e.kind, ErrorKind::Cert);
+
+    // A job already running when the prompt was declined fails without
+    // asking again.
+    let slow = svn.info(&url("https://nocert.test/slowcert/a"), &Rev::Head, Priority::Normal);
+    let fast = svn.info(&url("https://nocert.test/cert/b"), &Rev::Head, Priority::Normal);
+    assert_eq!(fast.wait().unwrap_err().kind, ErrorKind::Cert);
+    assert_eq!(slow.wait().unwrap_err().kind, ErrorKind::Cert);
+    assert_eq!(count.load(Ordering::SeqCst), 2);
 
     let svn = Svn::new(f.config());
     let e = svn

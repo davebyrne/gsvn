@@ -17,6 +17,8 @@
 //! | `scroll:I` | scroll row I into view |
 //! | `light` / `dark` | colour scheme |
 //! | `sleep:MS`, `rss`, `shot:PATH.png`, `quit` | |
+//!
+//! The steps also work in `GSVN_E2E_SCRIPT` (as `cmd=arg`), on any log window.
 
 use super::objects::RevisionItem;
 use super::window::LogWindow;
@@ -70,7 +72,8 @@ async fn wait_idle(win: &LogWindow) {
     }
 }
 
-async fn run_step(win: &Rc<LogWindow>, cmd: &str, arg: &str) {
+/// Run one step; `false` if `cmd` is unknown.
+async fn run_step(win: &Rc<LogWindow>, cmd: &str, arg: &str) -> bool {
     match cmd {
         "wait" => wait_idle(win).await,
         "sleep" => sleep(arg.parse().unwrap_or(500)).await,
@@ -177,7 +180,7 @@ async fn run_step(win: &Rc<LogWindow>, cmd: &str, arg: &str) {
         }
         "revmenu" | "pathmenu" => {
             // `revmenu:ROW,PATH.png`: open the context menu on ROW and render it.
-            let (row, path) = arg.split_once(',').unwrap_or(("0", arg));
+            let (row, path) = arg.split_once(',').unwrap_or((arg, ""));
             let row = row.parse().unwrap_or(0);
             let popover = if cmd == "revmenu" {
                 win.revision_context_menu(row, win.revisions.upcast_ref(), 200.0, 80.0);
@@ -187,8 +190,11 @@ async fn run_step(win: &Rc<LogWindow>, cmd: &str, arg: &str) {
                 win.path_popover.clone()
             };
             sleep(400).await;
-            screenshot(popover.upcast_ref(), path);
-            popover.popdown();
+            // Without a path, leave it open (for an `e2e.rs` `shot`).
+            if !path.is_empty() {
+                screenshot(popover.upcast_ref(), path);
+                popover.popdown();
+            }
         }
         "pageerror" => {
             let mut err = svn_backend::SvnError::new(svn_backend::ErrorKind::Network, "Connection reset by peer (simulated)");
@@ -205,7 +211,27 @@ async fn run_step(win: &Rc<LogWindow>, cmd: &str, arg: &str) {
             win.window.close();
             win.ctx.app.quit();
         }
-        other => eprintln!("[gsvn-log] unknown step {other:?}"),
+        other => {
+            eprintln!("[gsvn-log] unknown step {other:?}");
+            return false;
+        }
+    }
+    true
+}
+
+/// The same steps as `GSVN_E2E_SCRIPT` steps (see `e2e.rs`), written
+/// `cmd=arg` there (`select=3`, `revmenu=0,/tmp/m.png`).
+impl crate::e2e::Scriptable for LogWindow {
+    fn busy(&self) -> bool {
+        let paths = {
+            let st = self.state.borrow();
+            st.paths_task.is_some() || st.paths_delay.is_some()
+        };
+        paths || busy(self)
+    }
+
+    fn step(self: Rc<Self>, cmd: String, arg: String) -> crate::e2e::StepFuture {
+        Box::pin(async move { run_step(&self, &cmd, &arg).await })
     }
 }
 

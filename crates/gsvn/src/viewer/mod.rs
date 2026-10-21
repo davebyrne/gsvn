@@ -202,7 +202,6 @@ impl Viewer {
         let line_menu = gtk::PopoverMenu::from_model(None::<&gio::MenuModel>);
         line_menu.set_has_arrow(true);
         line_menu.set_position(gtk::PositionType::Right);
-        line_menu.set_parent(&view);
         let scrolled = gtk::ScrolledWindow::builder().child(&view).vexpand(true).build();
 
         let search = Search::new(&view, &buffer);
@@ -225,6 +224,9 @@ impl Viewer {
         let body = gtk::Box::new(gtk::Orientation::Vertical, 0);
         body.append(&banner);
         body.append(&stack);
+        // Not parented to the text view: there the menu was sized too
+        // small and its last item cut off.
+        line_menu.set_parent(&body);
 
         // Status bar: file info on the left, blame progress/controls right.
         let encoding_label = gtk::Label::builder().css_classes(["dim-label", "caption"]).build();
@@ -372,6 +374,8 @@ impl Viewer {
             });
         }
 
+        #[cfg(debug_assertions)]
+        crate::e2e::register(&window, Rc::downgrade(&this) as Weak<dyn crate::e2e::Scriptable>);
         this.update_title();
         this.set_mode(mode);
         this.load(false);
@@ -790,16 +794,16 @@ impl Viewer {
     fn show_binary(self: &Rc<Self>) {
         self.content.set(ContentState::Other);
         let guessed = {
+            // Not loaded (svn:mime-type said binary): guess from the name
+            // only; empty data would be guessed as an empty file.
             let data = self.data.borrow();
-            let head = data.as_deref().map(|d| &d[..d.len().min(4096)]).unwrap_or_default();
+            let head = data.as_deref().map(|d| &d[..d.len().min(4096)]);
             gio::content_type_guess(Some(self.name.borrow().as_str()), head).0
         };
-        let mime = self
-            .mime
-            .borrow()
-            .clone()
-            .or_else(|| gio::content_type_get_mime_type(&guessed).map(|m| m.to_string()))
-            .unwrap_or_else(|| "application/octet-stream".to_owned());
+        let mime = display_mime(
+            self.mime.borrow().as_deref(),
+            gio::content_type_get_mime_type(&guessed).as_deref(),
+        );
         let mut description = String::from("Binary file");
         if let Some(size) = self.size.get() {
             description.push_str(" · ");
@@ -1148,9 +1152,15 @@ impl Viewer {
             .view
             .buffer_to_window_coords(gtk::TextWindowType::Widget, 0, loc.y());
         let width = self.gutter.width();
+        let Some(parent) = self.line_menu.parent() else { return };
+        let Some(at) = self.view.compute_point(&parent, &gtk::graphene::Point::new(0.0, y as f32)) else { return };
         self.line_menu.set_menu_model(Some(&menu));
-        self.line_menu
-            .set_pointing_to(Some(&gdk::Rectangle::new(0, y, width, loc.height().max(1))));
+        self.line_menu.set_pointing_to(Some(&gdk::Rectangle::new(
+            at.x() as i32,
+            at.y() as i32,
+            width,
+            loc.height().max(1),
+        )));
         self.line_menu.popup();
     }
 
@@ -1216,10 +1226,17 @@ impl Viewer {
         let bytes = match data {
             Some(bytes) => bytes,
             None => {
+                // Shown until the download ends (not for its full timeout).
+                let progress = adw::Toast::builder()
+                    .title(glib::markup_escape_text(&format!("Downloading “{name}”…")))
+                    .timeout(0)
+                    .build();
                 if let Some(this) = weak.upgrade() {
-                    this.toast(&format!("Downloading “{name}”…"));
+                    this.toasts.add_toast(progress.clone());
                 }
-                match svn.cat(&url, rev, None, Priority::Normal).result().await {
+                let result = svn.cat(&url, rev, None, Priority::Normal).result().await;
+                progress.dismiss();
+                match result {
                     Ok(out) => glib::Bytes::from_owned(out.data),
                     Err(err) => {
                         if !err.is_cancelled()
@@ -1288,6 +1305,19 @@ fn mime_type(props: &[Property]) -> Option<String> {
         .filter(|m| !m.is_empty())
 }
 
+/// The MIME type to show for a binary file: `svn:mime-type`, unless it is
+/// missing or the generic `application/octet-stream` (what svn sets on any
+/// binary file it adds), then the type guessed by GIO.
+fn display_mime(svn_mime: Option<&str>, guessed: Option<&str>) -> String {
+    const GENERIC: &str = "application/octet-stream";
+    match (svn_mime.filter(|m| !m.is_empty()), guessed) {
+        (Some(m), _) if m != GENERIC => m.to_owned(),
+        (_, Some(g)) if !g.is_empty() && g != "application/x-zerosize" => g.to_owned(),
+        (Some(m), _) => m.to_owned(),
+        _ => GENERIC.to_owned(),
+    }
+}
+
 /// Language from the file name, then from a text `svn:mime-type`, then from
 /// the content type GIO guesses (which also looks at the data, e.g. `#!`).
 fn guess_language(name: &str, mime: Option<&str>, head: &[u8]) -> Option<sourceview5::Language> {
@@ -1307,6 +1337,18 @@ fn guess_language(name: &str, mime: Option<&str>, head: &[u8]) -> Option<sourcev
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn binary_mime() {
+        let generic = Some("application/octet-stream");
+        assert_eq!(display_mime(Some("image/x-foo"), Some("image/png")), "image/x-foo");
+        assert_eq!(display_mime(generic, Some("image/png")), "image/png");
+        assert_eq!(display_mime(None, Some("image/png")), "image/png");
+        assert_eq!(display_mime(Some(""), Some("image/png")), "image/png");
+        assert_eq!(display_mime(generic, None), "application/octet-stream");
+        assert_eq!(display_mime(None, Some("application/x-zerosize")), "application/octet-stream");
+        assert_eq!(display_mime(None, None), "application/octet-stream");
+    }
 
     #[test]
     fn elapsed() {

@@ -23,4 +23,6 @@ pub fn open(ctx: &Rc<Ctx>, url: RepoUrl, peg: RevNum) {
     win.start();
     #[cfg(debug_assertions)]
     debug::maybe_run(&win);
+    #[cfg(debug_assertions)]
+    crate::e2e::register(&win.window, Rc::downgrade(&win) as std::rc::Weak<dyn crate::e2e::Scriptable>);
 }

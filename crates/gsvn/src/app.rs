@@ -99,6 +99,8 @@ pub fn run() -> glib::ExitCode {
         crate::viewer::debug::hook(&ctx);
         #[cfg(debug_assertions)]
         startup_timing_hook(app, started);
+        #[cfg(debug_assertions)]
+        crate::e2e::hook(&ctx);
         {
             let ctx = ctx.clone();
             app.connect_activate(move |_| crate::start::open(&ctx));

@@ -84,8 +84,12 @@ struct HostState {
 struct Snapshot {
     creds: Option<Credentials>,
     auth_gen: u64,
+    /// `HostState::auth_declines` when the attempt started.
+    auth_declines: u64,
     trusted: Vec<String>,
     cert_gen: u64,
+    /// `HostState::cert_declines` when the attempt started.
+    cert_declines: u64,
 }
 
 enum Decision {
@@ -223,14 +227,18 @@ impl Inner {
             Some(st) => Snapshot {
                 creds: st.creds.clone(),
                 auth_gen: st.auth_gen,
+                auth_declines: st.auth_declines,
                 trusted: st.trusted.clone(),
                 cert_gen: st.cert_gen,
+                cert_declines: st.cert_declines,
             },
             None => Snapshot {
                 creds: None,
                 auth_gen: 0,
+                auth_declines: 0,
                 trusted: Vec::new(),
                 cert_gen: 0,
+                cert_declines: 0,
             },
         }
     }
@@ -294,7 +302,10 @@ impl Inner {
         prompts: &mut u32,
     ) -> Decision {
         let mut hosts = lock(&self.hosts);
-        let declines_at_start = hosts.entry(host.to_owned()).or_default().auth_declines;
+        // A prompt declined while this attempt ran (or while waiting below)
+        // answers this job too: jobs already running when the user pressed
+        // Cancel must not prompt again. Jobs started afterwards may.
+        let declines_at_start = snap.auth_declines;
         loop {
             if token.is_cancelled() {
                 return Decision::Cancelled;
@@ -370,7 +381,8 @@ impl Inner {
     ) -> Decision {
         let failures = cert_failures(&err.message);
         let mut hosts = lock(&self.hosts);
-        let declines_at_start = hosts.entry(host.to_owned()).or_default().cert_declines;
+        // As for auth: a decline during this attempt answers this job too.
+        let declines_at_start = snap.cert_declines;
         loop {
             if token.is_cancelled() {
                 return Decision::Cancelled;

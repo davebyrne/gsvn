@@ -345,6 +345,8 @@ impl Browser {
 
         #[cfg(debug_assertions)]
         debug::install(&this, &window);
+        #[cfg(debug_assertions)]
+        crate::e2e::register(&window, Rc::downgrade(&this) as std::rc::Weak<dyn crate::e2e::Scriptable>);
 
         this
     }
@@ -1296,27 +1298,38 @@ impl Browser {
         let weak = Rc::downgrade(self);
         common::spawn(async move {
             let Ok(file) = dialog.save_future(Some(&window)).await else { return };
-            let Some(this) = weak.upgrade() else { return };
-            let name = url.name();
-            this.toast(&format!("Downloading “{name}”…"));
-            let job = this.ctx.svn.cat(&url, loc.rev, None, Priority::Interactive);
-            drop(this);
-            let result = job.result().await;
-            let message = match result {
-                Ok(out) => match file
-                    .replace_contents_future(out.data, None, false, gio::FileCreateFlags::REPLACE_DESTINATION)
-                    .await
-                {
-                    Ok(_) => format!("Saved “{name}”"),
-                    Err((_, e)) => format!("Cannot save “{name}”: {e}"),
-                },
-                Err(e) if e.is_cancelled() => return,
-                Err(e) => format!("Cannot download “{name}”: {e}"),
-            };
-            if let Some(this) = weak.upgrade() {
-                this.toast(&message);
-            }
+            Self::save_to(weak, url, loc.rev, file).await;
         });
+    }
+
+    /// Download `url@rev` into `file`, reporting with toasts.
+    async fn save_to(weak: std::rc::Weak<Self>, url: RepoUrl, rev: RevNum, file: gio::File) {
+        let Some(this) = weak.upgrade() else { return };
+        let name = url.name();
+        // Shown until the download ends (not for its full timeout).
+        let progress = adw::Toast::builder()
+            .title(glib::markup_escape_text(&format!("Downloading “{name}”…")))
+            .timeout(0)
+            .build();
+        this.toasts.add_toast(progress.clone());
+        let job = this.ctx.svn.cat(&url, rev, None, Priority::Interactive);
+        drop(this);
+        let result = job.result().await;
+        progress.dismiss();
+        let message = match result {
+            Ok(out) => match file
+                .replace_contents_future(out.data, None, false, gio::FileCreateFlags::REPLACE_DESTINATION)
+                .await
+            {
+                Ok(_) => format!("Saved “{name}”"),
+                Err((_, e)) => format!("Cannot save “{name}”: {e}"),
+            },
+            Err(e) if e.is_cancelled() => return,
+            Err(e) => format!("Cannot download “{name}”: {e}"),
+        };
+        if let Some(this) = weak.upgrade() {
+            this.toast(&message);
+        }
     }
 
     fn toast(&self, text: &str) {

@@ -327,12 +327,27 @@ pub mod keyring {
     use super::CredentialStore;
     use gtk::glib;
     use std::cell::RefCell;
+    use std::future::Future;
     use std::rc::Rc;
+    use std::time::Duration;
     use svn_backend::Credentials;
+
+    /// `fut`'s output, or `None` if it does not finish within `timeout`
+    /// (it is then dropped). Runs on the thread-default main context.
+    pub async fn with_timeout<T>(timeout: Duration, fut: impl Future<Output = T>) -> Option<T> {
+        glib::future_with_timeout(timeout, fut).await.ok()
+    }
+
+    /// How long to wait for the Secret Service to answer at all. A broken
+    /// service (activatable but not starting) otherwise holds up the
+    /// password dialog for the D-Bus timeout of 25 s, on every prompt.
+    const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
     pub struct SecretStore {
         app: &'static str,
-        keyring: RefCell<Option<Rc<oo7::Keyring>>>,
+        /// `None` until the first use; then the keyring, or `None` if it is
+        /// unavailable (not retried this session).
+        keyring: RefCell<Option<Option<Rc<oo7::Keyring>>>>,
     }
 
     impl SecretStore {
@@ -346,19 +361,21 @@ pub mod keyring {
 
         async fn keyring(&self) -> Option<Rc<oo7::Keyring>> {
             if let Some(k) = self.keyring.borrow().clone() {
-                return Some(k);
+                return k;
             }
-            match oo7::Keyring::new().await {
-                Ok(k) => {
-                    let k = Rc::new(k);
-                    *self.keyring.borrow_mut() = Some(k.clone());
-                    Some(k)
-                }
-                Err(e) => {
+            let keyring = match with_timeout(CONNECT_TIMEOUT, oo7::Keyring::new()).await {
+                Some(Ok(k)) => Some(Rc::new(k)),
+                Some(Err(e)) => {
                     glib::g_warning!("gsvn", "Keyring unavailable: {e}");
                     None
                 }
-            }
+                None => {
+                    glib::g_warning!("gsvn", "Keyring unavailable: no answer after {CONNECT_TIMEOUT:?}");
+                    None
+                }
+            };
+            *self.keyring.borrow_mut() = Some(keyring.clone());
+            keyring
         }
 
         async fn try_lookup(&self, host_key: &str) -> oo7::Result<Option<Credentials>> {
@@ -443,6 +460,19 @@ pub mod keyring {
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        #[test]
+        fn timeout() {
+            let ctx = glib::MainContext::new();
+            let ms = Duration::from_millis;
+            assert_eq!(ctx.block_on(with_timeout(ms(50), std::future::pending::<u8>())), None);
+            assert_eq!(ctx.block_on(with_timeout(ms(5000), std::future::ready(7))), Some(7));
+            let slow = async {
+                glib::timeout_future(ms(10)).await;
+                8
+            };
+            assert_eq!(ctx.block_on(with_timeout(ms(5000), slow)), Some(8));
+        }
 
         /// Touches the real Secret Service under `application = gsvn-test`
         /// and cleans up. Run with `cargo test -- --ignored keyring`.

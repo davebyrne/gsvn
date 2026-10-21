@@ -191,6 +191,8 @@ impl DiffWindow {
         });
         this.connect_signals();
         this.install_actions();
+        #[cfg(debug_assertions)]
+        crate::e2e::register(&this.ui.window, Rc::downgrade(&this) as std::rc::Weak<dyn crate::e2e::Scriptable>);
         this.resolve_title();
         this.start();
         this.ui.window.present();
@@ -280,13 +282,15 @@ impl DiffWindow {
         window.add_controller(shortcuts);
     }
 
-    /// Replace the URL path in the title by the repository path once known.
+    /// Replace the URL path in the title by the repository path once known:
+    /// for `ChangeAt`, the path at the changed revision (the file may have
+    /// had another name then).
     fn resolve_title(self: &Rc<Self>) {
-        let peg = spec_peg(&self.spec);
-        let job = self
-            .ctx
-            .svn
-            .info(spec_url(&self.spec), &Rev::Number(peg), Priority::Normal);
+        let svn = &self.ctx.svn;
+        let job = match self.spec {
+            DiffSpec::ChangeAt { ref url, peg, rev } => svn.info_at(url, peg, rev, Priority::Normal),
+            _ => svn.info(spec_url(&self.spec), &Rev::Number(spec_peg(&self.spec)), Priority::Normal),
+        };
         let weak = Rc::downgrade(self);
         common::spawn(async move {
             let Ok(info) = job.result().await else { return };
@@ -577,6 +581,12 @@ impl DiffWindow {
     #[cfg(debug_assertions)]
     pub(super) fn gtk_window(&self) -> &adw::ApplicationWindow {
         &self.ui.window
+    }
+
+    /// The diff is still streaming.
+    #[cfg(debug_assertions)]
+    pub(super) fn is_streaming(&self) -> bool {
+        self.task.borrow().is_some()
     }
 
     /// Loading is paused at the size limit.
