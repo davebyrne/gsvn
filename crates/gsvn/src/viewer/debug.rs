@@ -61,91 +61,8 @@ pub fn hook(ctx: &Rc<Ctx>) {
         for step in steps.split(';').map(str::trim).filter(|s| !s.is_empty()) {
             let (cmd, arg) = step.split_once('=').unwrap_or((step, ""));
             eprintln!("step {step}");
-            match cmd {
-                "wait" => glib::timeout_future(Duration::from_millis(arg.parse().unwrap_or(500))).await,
-                "idle" => {
-                    let t0 = Instant::now();
-                    while viewer.content.get() == ContentState::Loading
-                        || viewer.blame_state.get() == BlameState::Running
-                    {
-                        if t0.elapsed() > Duration::from_secs(300) {
-                            eprintln!("idle: timed out");
-                            break;
-                        }
-                        glib::timeout_future(Duration::from_millis(50)).await;
-                    }
-                    eprintln!("idle after {:?}, longest main-loop stall so far {:?}", t0.elapsed(), stall.get());
-                    glib::timeout_future(Duration::from_millis(400)).await;
-                }
-                "shot" => {
-                    glib::timeout_future(Duration::from_millis(300)).await;
-                    screenshot(&viewer.window, arg);
-                }
-                "shotnewest" => {
-                    // The most recently opened other window (e.g. a diff).
-                    glib::timeout_future(Duration::from_millis(300)).await;
-                    let newest = ctx
-                        .app
-                        .windows()
-                        .into_iter()
-                        .filter(|w| w != viewer.window.upcast_ref::<gtk::Window>())
-                        .find_map(|w| w.downcast::<adw::ApplicationWindow>().ok());
-                    match newest {
-                        Some(w) => screenshot(&w, arg),
-                        None => eprintln!("shotnewest: no other window"),
-                    }
-                }
-                "dark" => adw::StyleManager::default().set_color_scheme(adw::ColorScheme::ForceDark),
-                "light" => adw::StyleManager::default().set_color_scheme(adw::ColorScheme::ForceLight),
-                "blame" => viewer.set_mode(ViewerMode::Blame),
-                "content" => viewer.set_mode(ViewerMode::Content),
-                "load-anyway" => viewer.load(true),
-                "cancel" => viewer.cancel_load(),
-                "cancel-blame" => viewer.cancel_blame(),
-                "since" => viewer.set_blame_start(arg.parse().ok()),
-                "search" => viewer.search.set_text(arg),
-                "goto" => viewer.goto_line(arg.parse().unwrap_or(1)),
-                "menu" => viewer.popup_line_menu(arg.parse().unwrap_or(0)),
-                "prev" | "changes" => {
-                    // Go through the gutter menu's actions; both resolve
-                    // asynchronously, so follow with `wait=MS;idle`.
-                    let rev = viewer.blame.borrow().commit(arg.parse().unwrap_or(0)).map(|c| c.rev);
-                    let (action, target) = match (cmd, rev) {
-                        ("prev", Some(r)) if r > 1 => ("viewer.blame-previous", r - 1),
-                        ("changes", Some(r)) => ("viewer.show-changes", r),
-                        _ => {
-                            eprintln!("{cmd}: no commit on that line");
-                            continue;
-                        }
-                    };
-                    if let Err(e) = WidgetExt::activate_action(&viewer.window, action, Some(&target.to_variant())) {
-                        eprintln!("{cmd}: {e}");
-                    }
-                }
-                "size" => {
-                    if let Some((w, h)) = arg.split_once(',')
-                        && let (Ok(w), Ok(h)) = (w.parse(), h.parse())
-                    {
-                        viewer.window.set_default_size(w, h);
-                    }
-                }
-                "save" => Viewer::write_file(Rc::downgrade(&viewer), gtk::gio::File::for_path(arg)).await,
-                "dump" => {
-                    let gutter = sourceview5::prelude::ViewExt::gutter(&viewer.view, gtk::TextWindowType::Left);
-                    eprintln!("gutter width {}", gutter.width());
-                    let mut child = gutter.first_child();
-                    while let Some(c) = child {
-                        eprintln!(
-                            "  {} bounds {:?} visible {} measure {:?}",
-                            c.type_().name(),
-                            c.compute_bounds(&gutter),
-                            c.is_visible(),
-                            c.measure(gtk::Orientation::Horizontal, -1)
-                        );
-                        child = c.next_sibling();
-                    }
-                }
-                _ => eprintln!("unknown step {step}"),
+            if !run_step(&viewer, cmd, arg, &stall).await {
+                eprintln!("unknown step {step}");
             }
         }
         eprintln!("longest main-loop stall: {:?}", stall.get());
@@ -156,20 +73,106 @@ pub fn hook(ctx: &Rc<Ctx>) {
     });
 }
 
-fn screenshot(window: &adw::ApplicationWindow, path: &str) {
-    let paintable = gtk::WidgetPaintable::new(Some(window));
-    let (w, h) = (window.width(), window.height());
-    let snapshot = gtk::Snapshot::new();
-    paintable.snapshot(&snapshot, f64::from(w), f64::from(h));
-    let Some(node) = snapshot.to_node() else {
-        eprintln!("screenshot: nothing to render");
-        return;
-    };
-    let Some(renderer) = window.renderer() else { return };
-    let texture = renderer.render_texture(&node, None);
-    match texture.save_to_png(path) {
-        Ok(()) => eprintln!("screenshot: {path}"),
-        Err(e) => eprintln!("screenshot: {e}"),
+/// Run one step on `viewer`; `false` if `cmd` is unknown.
+async fn run_step(viewer: &Rc<Viewer>, cmd: &str, arg: &str, stall: &Cell<Duration>) -> bool {
+    match cmd {
+        "wait" => glib::timeout_future(Duration::from_millis(arg.parse().unwrap_or(500))).await,
+        "idle" => {
+            let t0 = Instant::now();
+            while viewer.content.get() == ContentState::Loading
+                || viewer.blame_state.get() == BlameState::Running
+            {
+                if t0.elapsed() > Duration::from_secs(300) {
+                    eprintln!("idle: timed out");
+                    break;
+                }
+                glib::timeout_future(Duration::from_millis(50)).await;
+            }
+            eprintln!("idle after {:?}, longest main-loop stall so far {:?}", t0.elapsed(), stall.get());
+            glib::timeout_future(Duration::from_millis(400)).await;
+        }
+        "shot" => {
+            glib::timeout_future(Duration::from_millis(300)).await;
+            crate::e2e::screenshot(&viewer.window, arg);
+        }
+        "shotnewest" => {
+            // The most recently opened other window (e.g. a diff).
+            glib::timeout_future(Duration::from_millis(300)).await;
+            let newest = viewer
+                .ctx
+                .app
+                .windows()
+                .into_iter()
+                .filter(|w| w != viewer.window.upcast_ref::<gtk::Window>())
+                .find_map(|w| w.downcast::<adw::ApplicationWindow>().ok());
+            match newest {
+                Some(w) => crate::e2e::screenshot(&w, arg),
+                None => eprintln!("shotnewest: no other window"),
+            }
+        }
+        "dark" => adw::StyleManager::default().set_color_scheme(adw::ColorScheme::ForceDark),
+        "light" => adw::StyleManager::default().set_color_scheme(adw::ColorScheme::ForceLight),
+        "blame" => viewer.set_mode(ViewerMode::Blame),
+        "content" => viewer.set_mode(ViewerMode::Content),
+        "load-anyway" => viewer.load(true),
+        "cancel" => viewer.cancel_load(),
+        "cancel-blame" => viewer.cancel_blame(),
+        "since" => viewer.set_blame_start(arg.parse().ok()),
+        "search" => viewer.search.set_text(arg),
+        "goto" => viewer.goto_line(arg.parse().unwrap_or(1)),
+        "menu" => viewer.popup_line_menu(arg.parse().unwrap_or(0)),
+        "prev" | "changes" => {
+            // Go through the gutter menu's actions; both resolve
+            // asynchronously, so follow with `wait=MS;idle`.
+            let rev = viewer.blame.borrow().commit(arg.parse().unwrap_or(0)).map(|c| c.rev);
+            let (action, target) = match (cmd, rev) {
+                ("prev", Some(r)) if r > 1 => ("viewer.blame-previous", r - 1),
+                ("changes", Some(r)) => ("viewer.show-changes", r),
+                _ => {
+                    eprintln!("{cmd}: no commit on that line");
+                    return true;
+                }
+            };
+            if let Err(e) = WidgetExt::activate_action(&viewer.window, action, Some(&target.to_variant())) {
+                eprintln!("{cmd}: {e}");
+            }
+        }
+        "size" => {
+            if let Some((w, h)) = arg.split_once(',')
+                && let (Ok(w), Ok(h)) = (w.parse(), h.parse())
+            {
+                viewer.window.set_default_size(w, h);
+            }
+        }
+        "save" => Viewer::write_file(Rc::downgrade(viewer), gtk::gio::File::for_path(arg)).await,
+        "dump" => {
+            let gutter = sourceview5::prelude::ViewExt::gutter(&viewer.view, gtk::TextWindowType::Left);
+            eprintln!("gutter width {}", gutter.width());
+            let mut child = gutter.first_child();
+            while let Some(c) = child {
+                eprintln!(
+                    "  {} bounds {:?} visible {} measure {:?}",
+                    c.type_().name(),
+                    c.compute_bounds(&gutter),
+                    c.is_visible(),
+                    c.measure(gtk::Orientation::Horizontal, -1)
+                );
+                child = c.next_sibling();
+            }
+        }
+        _ => return false,
+    }
+    true
+}
+
+/// The steps also work in `GSVN_E2E_SCRIPT` (see `e2e.rs`), on any viewer.
+impl crate::e2e::Scriptable for Viewer {
+    fn busy(&self) -> bool {
+        self.content.get() == ContentState::Loading || self.blame_state.get() == BlameState::Running
+    }
+
+    fn step(self: Rc<Self>, cmd: String, arg: String) -> crate::e2e::StepFuture {
+        Box::pin(async move { run_step(&self, &cmd, &arg, &Cell::new(Duration::ZERO)).await })
     }
 }
 

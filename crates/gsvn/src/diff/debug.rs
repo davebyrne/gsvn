@@ -17,6 +17,9 @@
 //! GSVN_DIFF_LIMIT=B[:L]     total size limit override (bytes[:lines], §7.3)
 //! GSVN_DIFF_LOAD_REST=1     press "Load the Rest" when loading pauses
 //! ```
+//!
+//! In `GSVN_E2E_SCRIPT` (see `e2e.rs`), any diff window takes the steps
+//! `select=N`, `sbs`, `unified` and `loadrest`.
 
 use super::window::{DiffWindow, FileItem};
 use crate::app::Ctx;
@@ -100,6 +103,25 @@ pub fn open(ctx: &Rc<Ctx>) -> bool {
     }
     window.debug.replace(Some(hooks));
     true
+}
+
+impl crate::e2e::Scriptable for DiffWindow {
+    fn busy(&self) -> bool {
+        self.is_streaming()
+    }
+
+    fn step(self: Rc<Self>, cmd: String, arg: String) -> crate::e2e::StepFuture {
+        Box::pin(async move {
+            match cmd.as_str() {
+                "select" => self.select(arg.parse().unwrap_or(0)),
+                "sbs" => self.set_side_by_side(true),
+                "unified" => self.set_side_by_side(false),
+                "loadrest" => self.load_rest(),
+                _ => return false,
+            }
+            true
+        })
+    }
 }
 
 fn rss_mb() -> f64 {
