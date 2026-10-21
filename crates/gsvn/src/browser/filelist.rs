@@ -140,6 +140,8 @@ impl FileList {
             .build();
         view.set_model(Some(&selection));
         view.sort_by_column(Some(&name_col), gtk::SortType::Ascending);
+        // Numeric columns: headers right-aligned like their values.
+        align_titles_end(&view, &["Rev", "Size"]);
 
         let scrolled = gtk::ScrolledWindow::builder()
             .child(&view)
@@ -185,6 +187,37 @@ impl FileList {
                 true
             }
             None => false,
+        }
+    }
+}
+
+/// Right-align the header titles of the named columns. GTK has no API
+/// for this: each `GtkColumnViewTitle` holds a box with the label and the
+/// sort arrow; the box is moved to the end, the arrow before the label.
+fn align_titles_end(view: &gtk::ColumnView, titles: &[&str]) {
+    let mut stack = vec![view.clone().upcast::<gtk::Widget>()];
+    while let Some(w) = stack.pop() {
+        if w.type_().name() == "GtkColumnViewTitle" {
+            let Some(content) = w.first_child() else { continue };
+            let label = content.first_child().and_downcast::<gtk::Label>();
+            if let Some(label) = label.filter(|l| titles.contains(&l.label().as_str()))
+                && let Some(content) = content.downcast_ref::<gtk::Box>()
+            {
+                content.set_halign(gtk::Align::End);
+                // Sort arrow before the label, so the text ends where the values do.
+                if let Some(arrow) = label.next_sibling() {
+                    content.reorder_child_after(&label, Some(&arrow));
+                }
+            }
+            continue;
+        }
+        let mut child = w.first_child();
+        while let Some(c) = child {
+            child = c.next_sibling();
+            // The rows are not needed (and may be many).
+            if c.css_name() != "listview" {
+                stack.push(c);
+            }
         }
     }
 }
