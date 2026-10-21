@@ -196,6 +196,7 @@ mod imp {
             let bottom = visible.y() + visible.height();
             let palette = Palette::current();
             let (mut iter, _) = obj.line_at_y(visible.y());
+            let mut last = false;
             loop {
                 let (y, height) = obj.line_yrange(&iter);
                 if y >= bottom {
@@ -210,8 +211,18 @@ mod imp {
                     );
                     palette.paint_row(snapshot, row.kind, &rect);
                 }
-                if !iter.forward_line() {
+                if last {
                     break;
+                }
+                let line = iter.line();
+                if !iter.forward_line() {
+                    // `forward_line` also returns false when it lands on
+                    // the end iterator at the start of an empty last line
+                    // (e.g. a trailing filler row): paint that one too.
+                    if iter.line() == line {
+                        break;
+                    }
+                    last = true;
                 }
             }
         }
