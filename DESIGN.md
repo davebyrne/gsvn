@@ -244,6 +244,10 @@ Opened from the log, or from the file context menu. One window per diff.
 ### 7.1 Supported specs
 
 - **Single revision:** `svn diff -c N URL@N`, for a whole commit or one path.
+  When the path is known by a newer name (a log or blame of a file that was
+  renamed since N), `svn diff -c N URL@PEG` instead, so svn traces the node
+  back to N (`DiffSpec::ChangeAt`). Likewise `svn info -r N URL@PEG`
+  (`Svn::info_at`) gives a node's URL at N, for browsing or blaming it there.
 - **Two revisions of a path:** `svn diff URL@A URL@B`, or the equivalent
   `-r A:B URL@PEG` when the path existed at both revisions.
 
