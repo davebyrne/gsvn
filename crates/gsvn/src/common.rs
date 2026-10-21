@@ -3,7 +3,7 @@
 use crate::app::Ctx;
 use adw::prelude::*;
 use sourceview5::prelude::*;
-use gtk::glib;
+use gtk::{gio, glib};
 use std::rc::Rc;
 use svn_backend::{ErrorKind, RepoUrl, RevNum, SvnError, Timestamp};
 
@@ -130,7 +130,11 @@ pub fn error_page(err: &SvnError, retry: Option<Box<dyn Fn()>>) -> adw::StatusPa
 
 /// Guess a GtkSourceView language from a file name.
 pub fn language_for(file_name: &str) -> Option<sourceview5::Language> {
-    sourceview5::LanguageManager::default().guess_language(Some(file_name), None::<&str>)
+    // Without a content type, names with no extension (`Makefile`) are not
+    // recognised.
+    let (content_type, _) = gio::content_type_guess(Some(file_name), None);
+    sourceview5::LanguageManager::default()
+        .guess_language(Some(file_name), Some(content_type.as_str()))
 }
 
 /// Keep a source buffer's style scheme in sync with the light/dark setting.
@@ -221,6 +225,19 @@ pub fn show_message(parent: Option<&gtk::Widget>, heading: &str, body: &str) {
     dialog.present(parent);
 }
 
+/// `1234567` → `1 234 567` with narrow no-break spaces.
+pub fn group_thousands(n: usize) -> String {
+    let digits = n.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3 * 3);
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push('\u{202F}');
+        }
+        out.push(c);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -247,5 +264,13 @@ mod tests {
         assert!(parse_url_input("").is_err());
         assert!(parse_url_input("svn.example.com/repo").is_err());
         assert!(parse_url_input("ftp://x/y").is_err());
+    }
+
+    #[test]
+    fn thousands() {
+        assert_eq!(group_thousands(0), "0");
+        assert_eq!(group_thousands(999), "999");
+        assert_eq!(group_thousands(1234), "1\u{202F}234");
+        assert_eq!(group_thousands(1234567), "1\u{202F}234\u{202F}567");
     }
 }

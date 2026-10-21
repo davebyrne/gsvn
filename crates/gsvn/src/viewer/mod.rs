@@ -16,7 +16,8 @@ mod search;
 use crate::app::Ctx;
 use crate::common;
 use adw::prelude::*;
-use blame_model::{BlameModel, group_thousands};
+use crate::common::group_thousands;
+use blame_model::BlameModel;
 use gtk::{gdk, gio, glib};
 use gutter::BlameGutter;
 use search::Search;
@@ -56,8 +57,10 @@ enum BlameState {
 
 struct Viewer {
     ctx: Rc<Ctx>,
-    url: RepoUrl,
-    name: String,
+    /// The file's URL at `rev`; changes when Blame Previous Revision
+    /// crosses a rename.
+    url: RefCell<RepoUrl>,
+    name: RefCell<String>,
     rev: Cell<RevNum>,
     size: Cell<Option<u64>>,
     mime: RefCell<Option<String>>,
@@ -310,8 +313,8 @@ impl Viewer {
 
         let this = Rc::new(Self {
             ctx: ctx.clone(),
-            url,
-            name,
+            url: RefCell::new(url),
+            name: RefCell::new(name),
             rev: Cell::new(rev),
             size: Cell::new(size),
             mime: RefCell::new(None),
@@ -380,6 +383,26 @@ impl Viewer {
         Rc::downgrade(self)
     }
 
+    /// The file's URL at the revision shown.
+    fn url(&self) -> RepoUrl {
+        self.url.borrow().clone()
+    }
+
+    /// Resolve the file's URL at an older revision `rev` (it may have been
+    /// renamed or moved since) and call `f` with it; a toast reports failure.
+    fn with_url_at(self: &Rc<Self>, rev: RevNum, f: impl FnOnce(&Rc<Self>, RepoUrl) + 'static) {
+        let job = self.ctx.svn.info_at(&self.url(), self.rev.get(), rev, Priority::Interactive);
+        let weak = self.weak();
+        glib::spawn_future_local(async move {
+            let result = job.result().await;
+            let Some(this) = weak.upgrade() else { return };
+            match result {
+                Ok(info) => f(&this, info.url),
+                Err(e) => this.toast(&format!("Cannot find {} at r{rev}: {}", this.name.borrow(), e.message)),
+            }
+        });
+    }
+
     fn install_actions(self: &Rc<Self>) {
         let group = gio::SimpleActionGroup::new();
         let rev_param = u64::static_variant_type();
@@ -429,17 +452,24 @@ impl Viewer {
                     this.goto_button.popup();
                 }
             }),
-            simple("history", |this| crate::log::open(&this.ctx, this.url.clone(), this.rev.get())),
+            simple("history", |this| crate::log::open(&this.ctx, this.url(), this.rev.get())),
             simple("copy-url", |this| {
-                let text = this.url.with_peg(&Rev::Number(this.rev.get()));
+                let text = this.url().with_peg(&Rev::Number(this.rev.get()));
                 this.window.clipboard().set_text(&text);
                 this.toast("URL copied");
             }),
             with_rev("show-changes", |this, rev| {
-                crate::diff::open(&this.ctx, DiffSpec::Change { url: this.url.clone(), rev });
+                // The file may have had another name at `rev`: peg it at the
+                // revision shown and let svn trace it back.
+                let spec = DiffSpec::ChangeAt { url: this.url(), peg: this.rev.get(), rev };
+                crate::diff::open(&this.ctx, spec);
             }),
-            with_rev("show-log", |this, rev| crate::log::open(&this.ctx, this.url.clone(), rev)),
-            with_rev("blame-previous", |this, rev| this.switch_revision(rev)),
+            with_rev("show-log", |this, rev| {
+                this.with_url_at(rev, move |this, url| crate::log::open(&this.ctx, url, rev));
+            }),
+            with_rev("blame-previous", |this, rev| {
+                this.with_url_at(rev, move |this, url| this.switch_revision(url, rev));
+            }),
             with_rev("copy-revision", |this, rev| {
                 this.window.clipboard().set_text(&rev.to_string());
                 this.toast(&format!("Copied revision {rev}"));
@@ -568,7 +598,7 @@ impl Viewer {
     // ----- Loading -----------------------------------------------------
 
     fn update_title(&self) {
-        let title = format!("{} — r{}", self.name, self.rev.get());
+        let title = format!("{} — r{}", self.name.borrow(), self.rev.get());
         self.title.set_title(&title);
         self.window.set_title(Some(&title));
     }
@@ -601,7 +631,7 @@ impl Viewer {
     async fn load_content(weak: Weak<Self>, force_large: bool) -> Result<(), SvnError> {
         let Some(this) = weak.upgrade() else { return Ok(()) };
         let svn = this.ctx.svn.clone();
-        let url = this.url.clone();
+        let url = this.url();
         let rev = this.rev.get();
         let known_size = this.size.get();
         drop(this);
@@ -679,7 +709,7 @@ impl Viewer {
     fn show_loading(self: &Rc<Self>) {
         let page = adw::StatusPage::builder()
             .title("Loading…")
-            .description(glib::markup_escape_text(&self.name))
+            .description(glib::markup_escape_text(&self.name.borrow()))
             .build();
         page.set_paintable(Some(&adw::SpinnerPaintable::new(Some(&page))));
         let cancel = pill_button("_Cancel", false);
@@ -703,7 +733,7 @@ impl Viewer {
         let page = adw::StatusPage::builder()
             .icon_name("process-stop-symbolic")
             .title("Loading Cancelled")
-            .description(glib::markup_escape_text(&self.name))
+            .description(glib::markup_escape_text(&self.name.borrow()))
             .build();
         let load = pill_button("_Load", true);
         let weak = self.weak();
@@ -762,7 +792,7 @@ impl Viewer {
         let guessed = {
             let data = self.data.borrow();
             let head = data.as_deref().map(|d| &d[..d.len().min(4096)]).unwrap_or_default();
-            gio::content_type_guess(Some(self.name.as_str()), head).0
+            gio::content_type_guess(Some(self.name.borrow().as_str()), head).0
         };
         let mime = self
             .mime
@@ -782,7 +812,7 @@ impl Viewer {
         let icon = if icon_theme.has_icon(&icon) { icon } else { "application-x-executable-symbolic".to_owned() };
         let page = adw::StatusPage::builder()
             .icon_name(icon)
-            .title(glib::markup_escape_text(&self.name))
+            .title(glib::markup_escape_text(&self.name.borrow()))
             .description(glib::markup_escape_text(&description))
             .child(&self.save_pill())
             .build();
@@ -800,7 +830,7 @@ impl Viewer {
         let language = {
             let data = self.data.borrow();
             let head = data.as_deref().map(|d| &d[..d.len().min(4096)]).unwrap_or_default();
-            guess_language(&self.name, self.mime.borrow().as_deref(), head)
+            guess_language(&self.name.borrow(), self.mime.borrow().as_deref(), head)
         };
         self.buffer.set_language(language.as_ref());
         self.buffer.begin_irreversible_action();
@@ -851,7 +881,12 @@ impl Viewer {
     }
 
     /// Re-open this window at another revision (Blame Previous Revision).
-    fn switch_revision(self: &Rc<Self>, rev: RevNum) {
+    /// `url` is the file's URL at `rev`, see [`Self::with_url_at`].
+    fn switch_revision(self: &Rc<Self>, url: RepoUrl, rev: RevNum) {
+        if url != *self.url.borrow() {
+            self.name.replace(url.name());
+            self.url.replace(url);
+        }
         self.rev.set(rev);
         self.size.set(None);
         if self.blame_start.get().is_some_and(|s| s > rev) {
@@ -942,7 +977,7 @@ impl Viewer {
         let mut stream = self
             .ctx
             .svn
-            .blame(&self.url, self.rev.get(), self.blame_start.get(), Priority::Interactive);
+            .blame(&self.url(), self.rev.get(), self.blame_start.get(), Priority::Interactive);
         let weak = self.weak();
         let task = glib::spawn_future_local(async move {
             #[cfg(debug_assertions)]
@@ -1152,7 +1187,7 @@ impl Viewer {
     fn save_as(self: &Rc<Self>) {
         let dialog = gtk::FileDialog::builder()
             .title("Save As")
-            .initial_name(&self.name)
+            .initial_name(self.name.borrow().as_str())
             .modal(true)
             .build();
         let weak = self.weak();
@@ -1176,7 +1211,7 @@ impl Viewer {
     async fn write_file(weak: Weak<Self>, file: gio::File) {
         let Some(this) = weak.upgrade() else { return };
         let data = this.data.borrow().clone();
-        let (svn, url, rev, name) = (this.ctx.svn.clone(), this.url.clone(), this.rev.get(), this.name.clone());
+        let (svn, url, rev, name) = (this.ctx.svn.clone(), this.url(), this.rev.get(), this.name.borrow().clone());
         drop(this);
         let bytes = match data {
             Some(bytes) => bytes,

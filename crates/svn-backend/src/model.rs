@@ -180,6 +180,16 @@ pub struct CatOutput {
 pub enum DiffSpec {
     /// `svn diff -c REV URL@REV` — one commit, whole tree under `url` or one file.
     Change { url: RepoUrl, rev: RevNum },
+    /// `svn diff -c REV URL@PEG` — one commit, where `url` names the node as
+    /// it exists at `peg` (normally `peg >= rev`). svn traces the node back
+    /// to `rev`, so unlike [`DiffSpec::Change`] this works for paths that
+    /// were renamed or moved after `rev`. File paths in the output are the
+    /// names at `rev`.
+    ChangeAt {
+        url: RepoUrl,
+        peg: RevNum,
+        rev: RevNum,
+    },
     /// `svn diff -r FROM:TO URL@PEG` — a path between two revisions.
     Range {
         url: RepoUrl,

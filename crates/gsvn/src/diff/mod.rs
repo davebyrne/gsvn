@@ -4,11 +4,13 @@
 //!   ranges, file summaries), unit-tested.
 //! - [`view`]: `DiffView` (a `GtkSourceView` painting row backgrounds) and
 //!   the line-number gutter renderer.
+//! - [`limit`]: the total diff size limit (§7.3).
 //! - [`window`]: the window, file sidebar and streaming.
 
 #[cfg(debug_assertions)]
 mod debug;
 mod intra;
+mod limit;
 mod model;
 mod view;
 mod window;

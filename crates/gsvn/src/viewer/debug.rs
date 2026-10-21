@@ -9,10 +9,10 @@
 //! ```
 //!
 //! Steps (`;`-separated): `wait=MS`, `idle` (until nothing is loading),
-//! `shot=PATH`, `dark`, `light`, `blame`, `content`, `load-anyway`,
+//! `shot=PATH`, `shotnewest=PATH` (the newest other window), `dark`, `light`, `blame`, `content`, `load-anyway`,
 //! `cancel`, `cancel-blame`, `since=REV`, `search=TEXT`, `goto=LINE`,
 //! `menu=LINE` (gutter menu), `prev=LINE` (blame previous revision of
-//! LINE's commit), `save=PATH`, `dump` (gutter allocations), `size=W,H`. The app quits after the last step.
+//! LINE's commit), `changes=LINE` (show changes in LINE's commit), `save=PATH`, `dump` (gutter allocations), `size=W,H`. The app quits after the last step.
 
 use super::{BlameState, ContentState, Viewer, ViewerMode};
 use crate::app::Ctx;
@@ -81,6 +81,20 @@ pub fn hook(ctx: &Rc<Ctx>) {
                     glib::timeout_future(Duration::from_millis(300)).await;
                     screenshot(&viewer.window, arg);
                 }
+                "shotnewest" => {
+                    // The most recently opened other window (e.g. a diff).
+                    glib::timeout_future(Duration::from_millis(300)).await;
+                    let newest = ctx
+                        .app
+                        .windows()
+                        .into_iter()
+                        .filter(|w| w != viewer.window.upcast_ref::<gtk::Window>())
+                        .find_map(|w| w.downcast::<adw::ApplicationWindow>().ok());
+                    match newest {
+                        Some(w) => screenshot(&w, arg),
+                        None => eprintln!("shotnewest: no other window"),
+                    }
+                }
                 "dark" => adw::StyleManager::default().set_color_scheme(adw::ColorScheme::ForceDark),
                 "light" => adw::StyleManager::default().set_color_scheme(adw::ColorScheme::ForceLight),
                 "blame" => viewer.set_mode(ViewerMode::Blame),
@@ -92,11 +106,20 @@ pub fn hook(ctx: &Rc<Ctx>) {
                 "search" => viewer.search.set_text(arg),
                 "goto" => viewer.goto_line(arg.parse().unwrap_or(1)),
                 "menu" => viewer.popup_line_menu(arg.parse().unwrap_or(0)),
-                "prev" => {
+                "prev" | "changes" => {
+                    // Go through the gutter menu's actions; both resolve
+                    // asynchronously, so follow with `wait=MS;idle`.
                     let rev = viewer.blame.borrow().commit(arg.parse().unwrap_or(0)).map(|c| c.rev);
-                    match rev {
-                        Some(r) if r > 1 => viewer.switch_revision(r - 1),
-                        _ => eprintln!("prev: no commit on that line"),
+                    let (action, target) = match (cmd, rev) {
+                        ("prev", Some(r)) if r > 1 => ("viewer.blame-previous", r - 1),
+                        ("changes", Some(r)) => ("viewer.show-changes", r),
+                        _ => {
+                            eprintln!("{cmd}: no commit on that line");
+                            continue;
+                        }
+                    };
+                    if let Err(e) = WidgetExt::activate_action(&viewer.window, action, Some(&target.to_variant())) {
+                        eprintln!("{cmd}: {e}");
                     }
                 }
                 "size" => {
