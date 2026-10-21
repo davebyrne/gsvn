@@ -334,6 +334,7 @@ impl LogWindow {
             .position(360)
             .wide_handle(true)
             .build();
+        common::persist_pane(ctx, &window, &paned, "log.split");
 
         let toasts = adw::ToastOverlay::new();
         toasts.set_child(Some(&paned));

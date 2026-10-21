@@ -178,7 +178,7 @@ impl DiffWindow {
             ui,
             task: RefCell::new(None),
             file_task: RefCell::new(None),
-            side_by_side: Cell::new(false),
+            side_by_side: Cell::new(ctx.settings.diff_side_by_side()),
             generation: Cell::new(0),
             started: Cell::new(Instant::now()),
             first_file_at: Cell::new(None),
@@ -241,14 +241,18 @@ impl DiffWindow {
     fn install_actions(self: &Rc<Self>) {
         let window = &self.ui.window;
 
-        let split = gio::SimpleAction::new_stateful("side-by-side", None, &false.to_variant());
+        // Starts in the mode last chosen in any diff window.
+        let initial = self.side_by_side.get();
+        let split = gio::SimpleAction::new_stateful("side-by-side", None, &initial.to_variant());
         let weak = Rc::downgrade(self);
         split.connect_change_state(move |action, value| {
             let (Some(this), Some(value)) = (weak.upgrade(), value) else {
                 return;
             };
             action.set_state(value);
-            this.side_by_side.set(value.get::<bool>().unwrap_or(false));
+            let on = value.get::<bool>().unwrap_or(false);
+            this.side_by_side.set(on);
+            this.ctx.settings.set_diff_side_by_side(on);
             this.show_selected();
         });
         window.add_action(&split);
@@ -1026,6 +1030,7 @@ fn build_ui(ctx: &Rc<Ctx>, spec: &DiffSpec) -> Ui {
         .shrink_end_child(false)
         .position(300)
         .build();
+    common::persist_pane(ctx, &window, &paned, "diff.sidebar");
 
     // Outer stack: waiting for the first file / main / whole-window status.
     let outer_status = adw::Bin::new();

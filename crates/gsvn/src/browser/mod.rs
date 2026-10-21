@@ -207,6 +207,7 @@ impl Browser {
             .shrink_end_child(false)
             .position(280)
             .build();
+        common::persist_pane(ctx, &window, &paned, "browser.sidebar");
 
         // Status line.
         let status_spinner = adw::Spinner::builder().visible(false).build();

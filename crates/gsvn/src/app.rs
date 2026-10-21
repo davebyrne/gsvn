@@ -101,6 +101,12 @@ pub fn run() -> glib::ExitCode {
             let ctx = ctx.clone();
             app.connect_activate(move |_| crate::start::open(&ctx));
         }
+        {
+            // Windows closed by `app.quit` queue the write on an idle that
+            // may never run.
+            let ctx = ctx.clone();
+            app.connect_shutdown(move |_| ctx.settings.save_state());
+        }
         app.connect_command_line(move |_, cmd| handle_command_line(&ctx, cmd));
     });
     app.run()

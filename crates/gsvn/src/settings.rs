@@ -1,16 +1,18 @@
 //! Bookmarks, recent repositories and window state, persisted as TOML
-//! under the XDG config/state dirs (DESIGN.md §5.4, §11). Every mutating
-//! call saves immediately.
+//! under the XDG config/state dirs (DESIGN.md §5.4, §11).
 //!
-//! - `$XDG_CONFIG_HOME/gsvn/bookmarks.toml`: bookmarks and recent URLs
-//! - `$XDG_STATE_HOME/gsvn/state.toml`: window sizes
+//! - `$XDG_CONFIG_HOME/gsvn/bookmarks.toml`: bookmarks and recent URLs,
+//!   saved on every change
+//! - `$XDG_STATE_HOME/gsvn/state.toml`: window sizes, pane positions and
+//!   view preferences, kept in memory and written by [`Settings::save_state`]
+//!   (when a window closes and at shutdown), not on every resize
 //!
 //! Setting `GSVN_CONFIG_DIR` puts both files in that directory instead
 //! (handy for testing without touching the real settings).
 
 use gtk::glib;
 use serde::{Deserialize, Serialize};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -39,16 +41,29 @@ struct BookmarksFile {
     bookmarks: Vec<Bookmark>,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
 struct StateFile {
     #[serde(default)]
     windows: BTreeMap<String, WindowState>,
+    /// Paned positions by key (`"browser.sidebar"`, `"log.split"`, ...).
+    #[serde(default)]
+    panes: BTreeMap<String, i32>,
+    #[serde(default)]
+    diff: DiffState,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 struct WindowState {
     width: i32,
     height: i32,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    maximized: bool,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+struct DiffState {
+    #[serde(default)]
+    side_by_side: bool,
 }
 
 pub struct Settings {
@@ -56,6 +71,8 @@ pub struct Settings {
     state_path: PathBuf,
     data: RefCell<BookmarksFile>,
     state: RefCell<StateFile>,
+    /// `state` has changes not yet written.
+    state_dirty: Cell<bool>,
     listeners: RefCell<Vec<Rc<dyn Fn()>>>,
 }
 
@@ -85,6 +102,7 @@ impl Settings {
             state_path,
             data: RefCell::new(data),
             state: RefCell::new(state),
+            state_dirty: Cell::new(false),
             listeners: RefCell::new(Vec::new()),
         }
     }
@@ -159,21 +177,66 @@ impl Settings {
 
     /// Saved default size for a window kind (`"browser"`, `"log"`, ...).
     pub fn window_size(&self, kind: &str) -> Option<(i32, i32)> {
+        self.window(kind).map(|s| (s.width, s.height))
+    }
+
+    /// Whether the window kind was last closed maximized.
+    pub fn window_maximized(&self, kind: &str) -> bool {
+        self.window(kind).is_some_and(|s| s.maximized)
+    }
+
+    fn window(&self, kind: &str) -> Option<WindowState> {
         self.state
             .borrow()
             .windows
             .get(kind)
             .filter(|s| s.width > 0 && s.height > 0)
-            .map(|s| (s.width, s.height))
+            .copied()
     }
 
-    pub fn set_window_size(&self, kind: &str, width: i32, height: i32) {
+    /// Remember a window's unmaximized size and maximized state (written
+    /// by [`Settings::save_state`]).
+    pub fn set_window_state(&self, kind: &str, width: i32, height: i32, maximized: bool) {
         if width <= 0 || height <= 0 {
             return;
         }
-        let new = WindowState { width, height };
+        let new = WindowState { width, height, maximized };
         let changed = self.state.borrow_mut().windows.insert(kind.to_owned(), new) != Some(new);
+        self.mark_state(changed);
+    }
+
+    /// Saved position of a paned (`"browser.sidebar"`, ...).
+    pub fn pane_position(&self, key: &str) -> Option<i32> {
+        self.state.borrow().panes.get(key).copied().filter(|&p| p > 0)
+    }
+
+    pub fn set_pane_position(&self, key: &str, position: i32) {
+        if position <= 0 {
+            return;
+        }
+        let changed = self.state.borrow_mut().panes.insert(key.to_owned(), position) != Some(position);
+        self.mark_state(changed);
+    }
+
+    /// Whether new diff windows start side by side.
+    pub fn diff_side_by_side(&self) -> bool {
+        self.state.borrow().diff.side_by_side
+    }
+
+    pub fn set_diff_side_by_side(&self, on: bool) {
+        let changed = std::mem::replace(&mut self.state.borrow_mut().diff.side_by_side, on) != on;
+        self.mark_state(changed);
+    }
+
+    fn mark_state(&self, changed: bool) {
         if changed {
+            self.state_dirty.set(true);
+        }
+    }
+
+    /// Write `state.toml` if anything changed since the last write.
+    pub fn save_state(&self) {
+        if self.state_dirty.replace(false) {
             write_toml(&self.state_path, &*self.state.borrow());
         }
     }
@@ -294,12 +357,73 @@ mod tests {
     fn window_sizes_persist() {
         let dir = tempfile::tempdir().unwrap();
         let s = load(&dir);
-        s.set_window_size("log", 800, 600);
-        s.set_window_size("bad", 0, 600);
+        s.set_window_state("log", 800, 600, false);
+        s.set_window_state("bad", 0, 600, false);
+        // Nothing is written until save_state.
+        assert_eq!(load(&dir).window_size("log"), None);
+        s.save_state();
         assert_eq!(load(&dir).window_size("log"), Some((800, 600)));
+        assert!(!load(&dir).window_maximized("log"));
         assert_eq!(load(&dir).window_size("bad"), None);
         assert!(dir.path().join("state").join(STATE_FILE).exists());
         assert!(!dir.path().join("config").join(BOOKMARKS_FILE).exists());
+
+        s.set_window_state("log", 800, 600, true);
+        s.save_state();
+        assert!(load(&dir).window_maximized("log"));
+    }
+
+    #[test]
+    fn panes_and_diff_mode_persist() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = load(&dir);
+        assert_eq!(s.pane_position("browser.sidebar"), None);
+        assert!(!s.diff_side_by_side());
+        s.set_pane_position("browser.sidebar", 310);
+        s.set_pane_position("log.split", 0); // ignored
+        s.set_diff_side_by_side(true);
+        s.save_state();
+        let s2 = load(&dir);
+        assert_eq!(s2.pane_position("browser.sidebar"), Some(310));
+        assert_eq!(s2.pane_position("log.split"), None);
+        assert!(s2.diff_side_by_side());
+    }
+
+    #[test]
+    fn save_state_writes_only_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state").join(STATE_FILE);
+        let s = load(&dir);
+        s.save_state();
+        assert!(!path.exists(), "nothing changed, nothing written");
+        s.set_pane_position("diff.sidebar", 250);
+        s.save_state();
+        std::fs::remove_file(&path).unwrap();
+        s.set_pane_position("diff.sidebar", 250); // same value
+        s.set_diff_side_by_side(false); // default
+        s.save_state();
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn state_file_format() {
+        let mut state = StateFile::default();
+        state.windows.insert("browser".into(), WindowState { width: 1100, height: 720, maximized: false });
+        state.windows.insert("diff".into(), WindowState { width: 900, height: 700, maximized: true });
+        state.panes.insert("browser.sidebar".into(), 280);
+        state.diff.side_by_side = true;
+        let text = toml::to_string(&state).unwrap();
+        assert!(text.contains("[windows.browser]\nwidth = 1100\nheight = 720\n"), "{text}");
+        assert_eq!(text.matches("maximized").count(), 1, "{text}");
+        assert!(text.contains("[panes]\n\"browser.sidebar\" = 280"), "{text}");
+        assert!(text.contains("[diff]\nside_by_side = true"), "{text}");
+        assert_eq!(toml::from_str::<StateFile>(&text).unwrap(), state);
+
+        // Files from older versions (sizes only) still load.
+        let old: StateFile = toml::from_str("[windows.log]\nwidth = 1\nheight = 2\n").unwrap();
+        assert_eq!(old.windows["log"], WindowState { width: 1, height: 2, maximized: false });
+        assert!(old.panes.is_empty());
+        assert!(!old.diff.side_by_side);
     }
 
     #[test]
@@ -312,6 +436,7 @@ mod tests {
         let s = load(&dir);
         assert!(s.bookmarks().is_empty());
         assert_eq!(s.window_size("log"), None);
+        assert_eq!(s.pane_position("log.split"), None);
         // Saving overwrites the corrupt file.
         s.add_recent("https://h/r");
         assert_eq!(load(&dir).recent(), vec!["https://h/r".to_owned()]);
