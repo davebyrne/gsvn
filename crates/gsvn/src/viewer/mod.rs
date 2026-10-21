@@ -93,6 +93,7 @@ struct Viewer {
     content_button: gtk::ToggleButton,
     blame_button: gtk::ToggleButton,
     goto_button: gtk::MenuButton,
+    search_button: gtk::ToggleButton,
     goto_entry: gtk::Entry,
     status_bar: gtk::CenterBox,
     encoding_label: gtk::Label,
@@ -106,6 +107,8 @@ struct Viewer {
     since_entry: gtk::Entry,
     banner: adw::Banner,
 }
+
+const BLAME_TOOLTIP: &str = "Show Who Changed Each Line";
 
 impl Viewer {
     fn new(ctx: &Rc<Ctx>, url: RepoUrl, rev: RevNum, size: Option<u64>, mode: ViewerMode) -> Rc<Self> {
@@ -122,7 +125,7 @@ impl Viewer {
         let blame_button = gtk::ToggleButton::builder()
             .label("_Blame")
             .use_underline(true)
-            .tooltip_text("Show Who Changed Each Line")
+            .tooltip_text(BLAME_TOOLTIP)
             .group(&content_button)
             .build();
         let mode_box = gtk::Box::builder().css_classes(["linked"]).build();
@@ -130,7 +133,7 @@ impl Viewer {
         mode_box.append(&blame_button);
         let history_button = gtk::Button::builder()
             .icon_name("document-open-recent-symbolic")
-            .tooltip_text("History")
+            .tooltip_text("Show Log (Ctrl+Shift+L)")
             .action_name("viewer.history")
             .build();
         let save_button = gtk::Button::builder()
@@ -157,7 +160,7 @@ impl Viewer {
         goto_box.append(&goto_go);
         let goto_button = gtk::MenuButton::builder()
             .icon_name("go-jump-symbolic")
-            .tooltip_text("Go to Line (Ctrl+L)")
+            .tooltip_text("Go to Line (Ctrl+I)")
             .popover(&gtk::Popover::builder().child(&goto_box).build())
             .build();
 
@@ -345,6 +348,7 @@ impl Viewer {
             content_button,
             blame_button,
             goto_button,
+            search_button,
             goto_entry,
             status_bar,
             encoding_label,
@@ -451,6 +455,16 @@ impl Viewer {
                     this.search.open();
                 }
             }),
+            simple("find-next", |this| {
+                if this.content.get() == ContentState::Text {
+                    this.search.find_next(true);
+                }
+            }),
+            simple("find-previous", |this| {
+                if this.content.get() == ContentState::Text {
+                    this.search.find_next(false);
+                }
+            }),
             simple("goto-line", |this| {
                 if this.content.get() == ContentState::Text {
                     this.goto_button.popup();
@@ -483,18 +497,7 @@ impl Viewer {
         self.window.insert_action_group("viewer", Some(&group));
 
         let shortcuts = gtk::ShortcutController::new();
-        for (accel, action) in [
-            ("<Control>f", "viewer.search"),
-            ("<Control>l", "viewer.goto-line"),
-            ("<Control>g", "viewer.goto-line"),
-            ("<Control>s", "viewer.save-as"),
-            ("<Control><Shift>s", "viewer.save-as"),
-        ] {
-            shortcuts.add_shortcut(gtk::Shortcut::new(
-                gtk::ShortcutTrigger::parse_string(accel),
-                Some(gtk::NamedAction::new(action)),
-            ));
-        }
+        crate::shortcuts::add_to(&shortcuts, &crate::shortcuts::VIEWER);
         self.window.add_controller(shortcuts);
     }
 
@@ -601,6 +604,14 @@ impl Viewer {
 
     // ----- Loading -----------------------------------------------------
 
+    /// Find and Go to Line only work on text.
+    fn set_content(&self, state: ContentState) {
+        self.content.set(state);
+        let text = state == ContentState::Text;
+        self.search_button.set_sensitive(text);
+        self.goto_button.set_sensitive(text);
+    }
+
     fn update_title(&self) {
         let title = format!("{} — r{}", self.name.borrow(), self.rev.get());
         self.title.set_title(&title);
@@ -612,7 +623,9 @@ impl Viewer {
     fn load(self: &Rc<Self>, force_large: bool) {
         self.reset_blame();
         self.blame_allowed.set(false);
-        self.content.set(ContentState::Loading);
+        self.blame_button.set_sensitive(true);
+        self.blame_button.set_tooltip_text(Some(BLAME_TOOLTIP));
+        self.set_content(ContentState::Loading);
         self.data.replace(None);
         self.show_loading();
         let weak = self.weak();
@@ -733,7 +746,7 @@ impl Viewer {
         }
         self.reset_blame();
         self.blame_allowed.set(false);
-        self.content.set(ContentState::Other);
+        self.set_content(ContentState::Other);
         let page = adw::StatusPage::builder()
             .icon_name("process-stop-symbolic")
             .title("Loading Cancelled")
@@ -751,7 +764,7 @@ impl Viewer {
     }
 
     fn show_error(self: &Rc<Self>, err: &SvnError, force_large: bool) {
-        self.content.set(ContentState::Other);
+        self.set_content(ContentState::Other);
         self.blame_allowed.set(false);
         self.reset_blame();
         let weak = self.weak();
@@ -767,7 +780,7 @@ impl Viewer {
     }
 
     fn show_large(self: &Rc<Self>, size: u64) {
-        self.content.set(ContentState::Other);
+        self.set_content(ContentState::Other);
         let page = adw::StatusPage::builder()
             .icon_name("text-x-generic-symbolic")
             .title(format!("Large File ({})", common::format_size(size)))
@@ -792,7 +805,13 @@ impl Viewer {
     }
 
     fn show_binary(self: &Rc<Self>) {
-        self.content.set(ContentState::Other);
+        self.set_content(ContentState::Other);
+        // Blame makes no sense for binary content; `load` re-enables it.
+        self.blame_button.set_sensitive(false);
+        self.blame_button.set_tooltip_text(Some("Blame is not available for binary files"));
+        if self.mode.get() == ViewerMode::Blame {
+            self.set_mode(ViewerMode::Content);
+        }
         let guessed = {
             // Not loaded (svn:mime-type said binary): guess from the name
             // only; empty data would be guessed as an empty file.
@@ -872,7 +891,7 @@ impl Viewer {
         }
         self.info_label.set_text(&info);
 
-        self.content.set(ContentState::Text);
+        self.set_content(ContentState::Text);
         self.stack.set_visible_child_name("text");
         self.status_bar.set_visible(true);
         self.view.grab_focus();

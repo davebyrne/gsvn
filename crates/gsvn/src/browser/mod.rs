@@ -208,6 +208,7 @@ impl Browser {
             .shrink_end_child(false)
             .position(280)
             .build();
+        common::persist_pane(ctx, &window, &paned, "browser.sidebar");
 
         // Status line.
         let status_spinner = adw::Spinner::builder().visible(false).build();
@@ -612,21 +613,7 @@ impl Browser {
 
     fn install_shortcuts(self: &Rc<Self>, window: &adw::ApplicationWindow) {
         let controller = gtk::ShortcutController::new();
-        let shortcut = |accels: &str, action: &str| {
-            controller.add_shortcut(gtk::Shortcut::new(
-                gtk::ShortcutTrigger::parse_string(accels),
-                Some(gtk::NamedAction::new(action)),
-            ));
-        };
-        shortcut("<Alt>Left", "browser.back");
-        shortcut("<Alt>Right", "browser.forward");
-        shortcut("<Alt>Up", "browser.up");
-        shortcut("F5|<Control>r", "browser.refresh");
-        shortcut("<Control>l", "browser.location");
-        shortcut("<Control>d", "browser.bookmark");
-        shortcut("<Control><Shift>l", "browser.show-log");
-        shortcut("<Control>f", "browser.find");
-        shortcut("Menu|<Shift>F10", "browser.context-menu");
+        crate::shortcuts::add_to(&controller, &crate::shortcuts::BROWSER);
         window.add_controller(controller);
 
         // Mouse back/forward buttons.

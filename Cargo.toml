@@ -10,7 +10,7 @@ license = "GPL-3.0-or-later"
 [workspace.dependencies]
 svn-backend = { path = "crates/svn-backend" }
 gtk = { package = "gtk4", version = "0.11", features = ["v4_16"] }
-adw = { package = "libadwaita", version = "0.9", features = ["v1_6"] }
+adw = { package = "libadwaita", version = "0.9", features = ["v1_8"] }
 sourceview5 = "0.11"
 
 [profile.release]

@@ -15,8 +15,10 @@ pub fn spawn<F: std::future::Future<Output = ()> + 'static>(f: F) {
     glib::spawn_future_local(f);
 }
 
-/// Create an application window whose size is restored from and saved to
-/// settings under `kind` (`"browser"`, `"log"`, `"diff"`, `"viewer"`, `"start"`).
+/// Create an application window whose size (and maximized state) is
+/// restored from and saved to settings under `kind` (`"browser"`, `"log"`,
+/// `"diff"`, `"viewer"`, `"start"`). The state file is written when the
+/// window closes.
 pub fn new_window(ctx: &Rc<Ctx>, kind: &'static str, title: &str, default_size: (i32, i32)) -> adw::ApplicationWindow {
     let (w, h) = ctx.settings.window_size(kind).unwrap_or(default_size);
     let window = adw::ApplicationWindow::builder()
@@ -24,16 +26,35 @@ pub fn new_window(ctx: &Rc<Ctx>, kind: &'static str, title: &str, default_size: 
         .title(title)
         .default_width(w)
         .default_height(h)
+        .maximized(ctx.settings.window_maximized(kind))
         .build();
     let ctx = ctx.clone();
     window.connect_close_request(move |win| {
-        if !win.is_maximized() {
-            let (w, h) = win.default_size();
-            ctx.settings.set_window_size(kind, w, h);
-        }
+        // `default_size` tracks the unmaximized size.
+        let (w, h) = win.default_size();
+        ctx.settings.set_window_state(kind, w, h, win.is_maximized());
+        // After the other close handlers (pane positions) have run.
+        let ctx = ctx.clone();
+        glib::idle_add_local_once(move || ctx.settings.save_state());
         glib::Propagation::Proceed
     });
     window
+}
+
+/// Restore `paned`'s position from settings under `key` and save it when
+/// `window` closes.
+pub fn persist_pane(ctx: &Rc<Ctx>, window: &impl IsA<gtk::Window>, paned: &gtk::Paned, key: &'static str) {
+    if let Some(position) = ctx.settings.pane_position(key) {
+        paned.set_position(position);
+    }
+    let ctx = ctx.clone();
+    let paned = paned.downgrade();
+    window.connect_close_request(move |_| {
+        if let Some(paned) = paned.upgrade() {
+            ctx.settings.set_pane_position(key, paned.position());
+        }
+        glib::Propagation::Proceed
+    });
 }
 
 pub fn format_size(bytes: u64) -> String {
@@ -153,26 +174,16 @@ pub fn follow_style_scheme(buffer: &sourceview5::Buffer) {
     manager.connect_dark_notify(apply);
 }
 
-/// Temporary window for modules that are not implemented yet.
-pub fn placeholder_window(ctx: &Rc<Ctx>, title: &str, text: &str) {
-    let window = new_window(ctx, "placeholder", title, (600, 400));
-    let view = adw::ToolbarView::new();
-    view.add_top_bar(&adw::HeaderBar::new());
-    view.set_content(Some(
-        &adw::StatusPage::builder().title(title).description(text).build(),
-    ));
-    window.set_content(Some(&view));
-    window.present();
-}
-
-/// The shared primary menu (☰) model: New Window, About gsvn. Windows may
-/// prepend their own sections with `menu.prepend_section`.
+/// The shared primary menu (☰) model: New Window, Keyboard Shortcuts,
+/// About gsvn. Windows may prepend their own sections with
+/// `menu.prepend_section`.
 pub fn main_menu() -> gtk::gio::Menu {
     let menu = gtk::gio::Menu::new();
     let section = gtk::gio::Menu::new();
     section.append(Some("_New Window"), Some("app.new-window"));
     menu.append_section(None, &section);
     let section = gtk::gio::Menu::new();
+    section.append(Some("_Keyboard Shortcuts"), Some("app.shortcuts"));
     section.append(Some("_About gsvn"), Some("app.about"));
     menu.append_section(None, &section);
     menu

@@ -124,6 +124,26 @@ fn title_for(spec: &DiffSpec, path: &str) -> String {
     }
 }
 
+/// Header subtitle: the target's repository path, plus `@PEG` when the
+/// URL is valid at another revision than the one shown (`/trunk/new.c@60`),
+/// as in the log window.
+fn subtitle_for(spec: &DiffSpec, path: &str) -> String {
+    match *spec {
+        DiffSpec::Range { peg, to: rev, .. } | DiffSpec::ChangeAt { peg, rev, .. } if peg != rev => {
+            format!("{path}@{peg}")
+        }
+        _ => path.to_owned(),
+    }
+}
+
+/// Last component of a repository path, `/` for the root.
+fn path_name(path: &str) -> &str {
+    match path.trim_end_matches('/').rsplit('/').next() {
+        Some(name) if !name.is_empty() => name,
+        _ => "/",
+    }
+}
+
 /// Revision at which the diff target's URL is valid.
 fn spec_peg(spec: &DiffSpec) -> RevNum {
     match *spec {
@@ -178,7 +198,7 @@ impl DiffWindow {
             ui,
             task: RefCell::new(None),
             file_task: RefCell::new(None),
-            side_by_side: Cell::new(false),
+            side_by_side: Cell::new(ctx.settings.diff_side_by_side()),
             generation: Cell::new(0),
             started: Cell::new(Instant::now()),
             first_file_at: Cell::new(None),
@@ -241,14 +261,18 @@ impl DiffWindow {
     fn install_actions(self: &Rc<Self>) {
         let window = &self.ui.window;
 
-        let split = gio::SimpleAction::new_stateful("side-by-side", None, &false.to_variant());
+        // Starts in the mode last chosen in any diff window.
+        let initial = self.side_by_side.get();
+        let split = gio::SimpleAction::new_stateful("side-by-side", None, &initial.to_variant());
         let weak = Rc::downgrade(self);
         split.connect_change_state(move |action, value| {
             let (Some(this), Some(value)) = (weak.upgrade(), value) else {
                 return;
             };
             action.set_state(value);
-            this.side_by_side.set(value.get::<bool>().unwrap_or(false));
+            let on = value.get::<bool>().unwrap_or(false);
+            this.side_by_side.set(on);
+            this.ctx.settings.set_diff_side_by_side(on);
             this.show_selected();
         });
         window.add_action(&split);
@@ -269,22 +293,14 @@ impl DiffWindow {
         // (which bind Alt+Up/Down and Ctrl+PageUp/Down) don't eat them.
         let shortcuts = gtk::ShortcutController::new();
         shortcuts.set_propagation_phase(gtk::PropagationPhase::Capture);
-        for (trigger, action) in [
-            ("<Control>t", "win.side-by-side"),
-            ("<Alt>Up|<Control>Page_Up", "win.prev-file"),
-            ("<Alt>Down|<Control>Page_Down", "win.next-file"),
-        ] {
-            shortcuts.add_shortcut(gtk::Shortcut::new(
-                gtk::ShortcutTrigger::parse_string(trigger),
-                Some(gtk::NamedAction::new(action)),
-            ));
-        }
+        crate::shortcuts::add_to(&shortcuts, &crate::shortcuts::DIFF);
         window.add_controller(shortcuts);
     }
 
-    /// Replace the URL path in the title by the repository path once known:
+    /// Replace the URL in the title by the repository path once known:
     /// for `ChangeAt`, the path at the changed revision (the file may have
-    /// had another name then).
+    /// had another name then). The header shows the name in its title and
+    /// the full path (at the peg revision) below, like the other windows.
     fn resolve_title(self: &Rc<Self>) {
         let svn = &self.ctx.svn;
         let job = match self.spec {
@@ -295,9 +311,17 @@ impl DiffWindow {
         common::spawn(async move {
             let Ok(info) = job.result().await else { return };
             if let Some(this) = weak.upgrade() {
-                let title = title_for(&this.spec, &info.repos_path);
-                this.ui.title.set_title(&title);
-                this.ui.window.set_title(Some(&title));
+                let path: &str = &info.repos_path;
+                this.ui.window.set_title(Some(&title_for(&this.spec, path)));
+                let name = match path_name(path) {
+                    "/" => info.root.name(),
+                    name => name.to_owned(),
+                };
+                this.ui.title.set_title(&title_for(&this.spec, &name));
+                let peg_path = spec_url(&this.spec).path_from(&info.root);
+                this.ui
+                    .title
+                    .set_subtitle(&subtitle_for(&this.spec, peg_path.as_deref().unwrap_or(path)));
             }
         });
     }
@@ -889,13 +913,8 @@ fn build_ui(ctx: &Rc<Ctx>, spec: &DiffSpec) -> Ui {
     let url = spec_url(spec);
     let title_text = title_for(spec, &url_path(url));
     let window = common::new_window(ctx, "diff", &title_text, (1200, 800));
-    let mut subtitle = decode(url.as_str());
-    if let DiffSpec::Range { peg, to: rev, .. } | DiffSpec::ChangeAt { peg, rev, .. } = spec
-        && peg != rev
-    {
-        subtitle.push_str(&format!("@{peg}"));
-    }
-    let title = adw::WindowTitle::new(&title_text, &subtitle);
+    // Until the repository root is known (see `resolve_title`).
+    let title = adw::WindowTitle::new(&title_for(spec, &url.name()), &subtitle_for(spec, &decode(url.as_str())));
 
     // Header bar.
     let header = adw::HeaderBar::new();
@@ -1026,6 +1045,7 @@ fn build_ui(ctx: &Rc<Ctx>, spec: &DiffSpec) -> Ui {
         .shrink_end_child(false)
         .position(300)
         .build();
+    common::persist_pane(ctx, &window, &paned, "diff.sidebar");
 
     // Outer stack: waiting for the first file / main / whole-window status.
     let outer_status = adw::Bin::new();
@@ -1198,6 +1218,17 @@ mod tests {
             to: 20,
         };
         assert_eq!(title_for(&range, "/trunk/foo.c"), "r10:r20 — /trunk/foo.c");
+        assert_eq!(subtitle_for(&range, "/trunk/foo.c"), "/trunk/foo.c@30");
+        assert_eq!(subtitle_for(&change, "/trunk/my dir"), "/trunk/my dir");
+        let same_peg = DiffSpec::ChangeAt {
+            url: url.clone(),
+            peg: 7,
+            rev: 7,
+        };
+        assert_eq!(subtitle_for(&same_peg, "/trunk"), "/trunk");
+        assert_eq!(path_name("/trunk/foo.c"), "foo.c");
+        assert_eq!(path_name("/trunk/"), "trunk");
+        assert_eq!(path_name("/"), "/");
         assert_eq!(sides(&change), (1233, 1234));
         assert_eq!(sides(&range), (10, 20));
 

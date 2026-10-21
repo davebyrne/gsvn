@@ -137,8 +137,9 @@ impl LogWindow {
             .action_name("log.refresh")
             .build();
         let header = adw::HeaderBar::builder().title_widget(&window_title).build();
-        header.pack_start(&refresh);
+        // Refresh next to the menu, as in the browser.
         header.pack_end(&common::main_menu_button(&common::main_menu()));
+        header.pack_end(&refresh);
 
         // Revision list.
         let store = gio::ListStore::new::<RevisionItem>();
@@ -334,6 +335,7 @@ impl LogWindow {
             .position(360)
             .wide_handle(true)
             .build();
+        common::persist_pane(ctx, &window, &paned, "log.split");
 
         let toasts = adw::ToastOverlay::new();
         toasts.set_child(Some(&paned));
@@ -503,13 +505,7 @@ impl LogWindow {
 
         let shortcuts = gtk::ShortcutController::new();
         shortcuts.set_scope(gtk::ShortcutScope::Managed);
-        for (accel, action) in [
-            ("F5", "log.refresh"),
-            ("<Control>r", "log.refresh"),
-            ("<Control>f", "log.focus-search"),
-        ] {
-            shortcuts.add_shortcut(shortcut(accel, action));
-        }
+        crate::shortcuts::add_to(&shortcuts, &crate::shortcuts::LOG);
         self.window.add_controller(shortcuts);
 
         let copy = gtk::ShortcutController::new();

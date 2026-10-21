@@ -19,7 +19,8 @@
 //! ```
 //!
 //! Application actions: `app.new-window` (Ctrl+N), `app.quit` (Ctrl+Q),
-//! `app.about`; `window.close` is bound to Ctrl+W.
+//! `app.shortcuts` (Ctrl+?), `app.about`; `window.close` is bound to
+//! Ctrl+W. All accelerators are listed in [`crate::shortcuts`].
 
 use crate::common;
 use crate::settings::Settings;
@@ -104,6 +105,12 @@ pub fn run() -> glib::ExitCode {
         {
             let ctx = ctx.clone();
             app.connect_activate(move |_| crate::start::open(&ctx));
+        }
+        {
+            // Windows closed by `app.quit` queue the write on an idle that
+            // may never run.
+            let ctx = ctx.clone();
+            app.connect_shutdown(move |_| ctx.settings.save_state());
         }
         app.connect_command_line(move |_, cmd| handle_command_line(&ctx, cmd));
     });
@@ -265,10 +272,7 @@ fn install_actions(ctx: &Rc<Ctx>) {
         .activate(|app: &adw::Application, _, _| show_about(app))
         .build();
     app.add_action_entries([new_window, quit, about]);
-
-    app.set_accels_for_action("app.new-window", &["<Control>n"]);
-    app.set_accels_for_action("app.quit", &["<Control>q"]);
-    app.set_accels_for_action("window.close", &["<Control>w"]);
+    crate::shortcuts::install(app);
 }
 
 fn show_about(app: &adw::Application) {

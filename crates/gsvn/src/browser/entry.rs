@@ -71,7 +71,7 @@ fn intern_author(author: Option<String>) -> Option<Rc<str>> {
 
 mod imp {
     use super::*;
-    use glib::{ParamSpec, ParamSpecBoolean, ParamSpecString, Value};
+    use glib::{ParamSpec, ParamSpecBoolean, Value};
     use gtk::prelude::*;
     use std::cell::{Cell, OnceCell};
     use std::sync::OnceLock;
@@ -94,16 +94,12 @@ mod imp {
         fn properties() -> &'static [ParamSpec] {
             static PROPS: OnceLock<Vec<ParamSpec>> = OnceLock::new();
             PROPS.get_or_init(|| {
-                vec![
-                    ParamSpecString::builder("name").read_only().build(),
-                    ParamSpecBoolean::builder("childless").explicit_notify().build(),
-                ]
+                vec![ParamSpecBoolean::builder("childless").explicit_notify().build()]
             })
         }
 
         fn property(&self, _id: usize, pspec: &ParamSpec) -> Value {
             match pspec.name() {
-                "name" => self.data.get().map(|d| &*d.name).to_value(),
                 "childless" => self.childless.get().to_value(),
                 _ => unreachable!(),
             }
