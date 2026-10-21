@@ -282,13 +282,15 @@ impl DiffWindow {
         window.add_controller(shortcuts);
     }
 
-    /// Replace the URL path in the title by the repository path once known.
+    /// Replace the URL path in the title by the repository path once known:
+    /// for `ChangeAt`, the path at the changed revision (the file may have
+    /// had another name then).
     fn resolve_title(self: &Rc<Self>) {
-        let peg = spec_peg(&self.spec);
-        let job = self
-            .ctx
-            .svn
-            .info(spec_url(&self.spec), &Rev::Number(peg), Priority::Normal);
+        let svn = &self.ctx.svn;
+        let job = match self.spec {
+            DiffSpec::ChangeAt { ref url, peg, rev } => svn.info_at(url, peg, rev, Priority::Normal),
+            _ => svn.info(spec_url(&self.spec), &Rev::Number(spec_peg(&self.spec)), Priority::Normal),
+        };
         let weak = Rc::downgrade(self);
         common::spawn(async move {
             let Ok(info) = job.result().await else { return };
