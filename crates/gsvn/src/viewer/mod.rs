@@ -372,6 +372,8 @@ impl Viewer {
             });
         }
 
+        #[cfg(debug_assertions)]
+        crate::e2e::register(&window, Rc::downgrade(&this) as Weak<dyn crate::e2e::Scriptable>);
         this.update_title();
         this.set_mode(mode);
         this.load(false);

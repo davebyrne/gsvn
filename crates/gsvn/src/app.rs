@@ -95,6 +95,8 @@ pub fn run() -> glib::ExitCode {
         install_actions(&ctx);
         #[cfg(debug_assertions)]
         crate::viewer::debug::hook(&ctx);
+        #[cfg(debug_assertions)]
+        crate::e2e::hook(&ctx);
         {
             let ctx = ctx.clone();
             app.connect_activate(move |_| crate::start::open(&ctx));

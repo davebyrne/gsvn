@@ -191,6 +191,8 @@ impl DiffWindow {
         });
         this.connect_signals();
         this.install_actions();
+        #[cfg(debug_assertions)]
+        crate::e2e::register(&this.ui.window, Rc::downgrade(&this) as std::rc::Weak<dyn crate::e2e::Scriptable>);
         this.resolve_title();
         this.start();
         this.ui.window.present();
@@ -577,6 +579,12 @@ impl DiffWindow {
     #[cfg(debug_assertions)]
     pub(super) fn gtk_window(&self) -> &adw::ApplicationWindow {
         &self.ui.window
+    }
+
+    /// The diff is still streaming.
+    #[cfg(debug_assertions)]
+    pub(super) fn is_streaming(&self) -> bool {
+        self.task.borrow().is_some()
     }
 
     /// Loading is paused at the size limit.

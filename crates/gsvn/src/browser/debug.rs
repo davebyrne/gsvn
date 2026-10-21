@@ -8,6 +8,12 @@
 //!   (`tree=N`).
 //! - `GSVN_BROWSER_SNAPSHOT=/path/out.png` (+ `GSVN_BROWSER_SNAPSHOT_AT`
 //!   seconds, default 4): render the window to a PNG, then quit.
+//!
+//! The same commands work as `GSVN_E2E_SCRIPT` steps (see `e2e.rs`), plus
+//! `select=N` (select list row N), `activate=N` (open list row N, as a
+//! double-click), `saveas=N:PATH` (Save As of list row N, without the
+//! file dialog), `treemenu=N` (context menu of tree row N) and
+//! `shotnewest=PATH` (render the newest other window).
 
 use super::Browser;
 use adw::prelude::*;
@@ -46,6 +52,58 @@ pub fn install(browser: &Rc<Browser>, window: &adw::ApplicationWindow) {
                 }
             }
         });
+    }
+}
+
+impl crate::e2e::Scriptable for Browser {
+    fn busy(&self) -> bool {
+        self.state.borrow().info_token.is_some() || self.current_dir().is_some_and(|d| d.is_loading())
+    }
+
+    fn step(self: Rc<Self>, cmd: String, arg: String) -> crate::e2e::StepFuture {
+        Box::pin(async move {
+            match cmd.as_str() {
+                "select" => {
+                    let pos: u32 = arg.parse().unwrap_or(0);
+                    self.files.selection.set_selected(pos);
+                }
+                "activate" => match self.files.item(arg.parse().unwrap_or(0)) {
+                    Some(entry) => self.open_entry(&entry),
+                    None => eprintln!("activate: no row {arg}"),
+                },
+                "saveas" => {
+                    let (pos, path) = arg.split_once(':').unwrap_or(("0", &arg));
+                    let entry = self.files.item(pos.parse().unwrap_or(0));
+                    let rev = self.state.borrow().loc.as_ref().map(|l| l.rev);
+                    if let (Some(entry), Some(rev)) = (entry, rev) {
+                        Browser::save_to(Rc::downgrade(&self), entry.url(), rev, gtk::gio::File::for_path(path)).await;
+                    }
+                }
+                "treemenu" => {
+                    self.tree.selection.set_selected(arg.parse().unwrap_or(0));
+                    match self.tree.selected_entry() {
+                        Some(entry) => {
+                            let view = self.tree.view.clone().upcast::<gtk::Widget>();
+                            self.popup_menu(&entry, true, &view, 100.0, 20.0);
+                        }
+                        None => eprintln!("treemenu: no row {arg}"),
+                    }
+                }
+                "shotnewest" => {
+                    let own = self.window.upgrade().map(|w| w.upcast::<gtk::Window>());
+                    let newest = self.ctx.app.windows().into_iter().find(|w| Some(w) != own.as_ref());
+                    match newest {
+                        Some(w) => crate::e2e::screenshot(&w, &arg),
+                        None => eprintln!("shotnewest: no other window"),
+                    }
+                }
+                "goto" | "action" | "filter" | "menu" | "tree" | "revpopover" | "dump" => {
+                    run(&self, &format!("{cmd}={arg}"));
+                }
+                _ => return false,
+            }
+            true
+        })
     }
 }
 
