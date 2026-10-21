@@ -11,8 +11,9 @@ use std::rc::{Rc, Weak};
 use svn_backend::Priority;
 
 /// Indentation stops growing after this many levels; deeper rows show a
-/// depth badge instead.
-pub const INDENT_CAP: u32 = 12;
+/// depth badge instead. Kept low so names still fit in a narrow sidebar
+/// next to the badge (at 12 levels a 280 px sidebar left ~25 px).
+pub const INDENT_CAP: u32 = 8;
 /// Pixels per indentation level.
 const INDENT_PX: i32 = 12;
 

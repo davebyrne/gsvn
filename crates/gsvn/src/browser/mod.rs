@@ -65,6 +65,9 @@ struct State {
     context: Option<EntryObject>,
     /// The tree selection is being changed programmatically.
     syncing_tree: bool,
+    /// The current navigation came from selecting a tree row: the row is
+    /// selected but not expanded (only the expander arrow expands).
+    from_tree: bool,
     /// The user scrolled, clicked or typed in the file list since the
     /// last navigation. Until then the list is kept scrolled to the top
     /// while batches arrive (directories sort first but arrive last).
@@ -310,6 +313,7 @@ impl Browser {
                 info_token: None,
                 context: None,
                 syncing_tree: false,
+                from_tree: false,
                 list_touched: false,
             }),
             opened: Cell::new(Some(std::time::Instant::now())),
@@ -846,6 +850,7 @@ impl Browser {
 
     /// Show the directory `loc`, optionally selecting the entry `select`.
     fn navigate(self: &Rc<Self>, loc: Location, select: Option<String>, push_history: bool) {
+        let from_tree = std::mem::take(&mut self.state.borrow_mut().from_tree);
         let needs_reset = {
             let st = self.state.borrow();
             st.cache.as_ref().is_none_or(|c| c.rev != loc.rev || !nav::is_within(&loc.url, &c.root))
@@ -893,7 +898,7 @@ impl Browser {
         self.files.set_store(&dir.store);
         dir.ensure(Priority::Interactive);
         self.on_dir_event(&dir);
-        self.reveal_in_tree(loc.url.clone());
+        self.reveal_in_tree(loc.url.clone(), !from_tree);
         self.update_actions();
     }
 
@@ -990,6 +995,7 @@ impl Browser {
         let Some(loc) = self.state.borrow().loc.clone() else { return };
         let url = entry.url();
         if url != loc.url {
+            self.state.borrow_mut().from_tree = true;
             self.navigate(Location { url, ..loc }, None, true);
         }
     }
@@ -1008,8 +1014,10 @@ impl Browser {
 
     /// Expand the tree along the path to `target` in the background and
     /// select it. Ancestors are listed at background priority, one after
-    /// the other; a newer reveal cancels this one.
-    fn reveal_in_tree(self: &Rc<Self>, target: RepoUrl) {
+    /// the other; a newer reveal cancels this one. `expand_target` also
+    /// expands the target row itself (not wanted when the user just
+    /// selected it in the tree).
+    fn reveal_in_tree(self: &Rc<Self>, target: RepoUrl, expand_target: bool) {
         let (generation, cache) = {
             let mut st = self.state.borrow_mut();
             st.reveal_gen += 1;
@@ -1063,14 +1071,27 @@ impl Browser {
                 glib::g_debug!(LOG_DOMAIN, "tree revealed {} levels in {:?}", segments.len(), started.elapsed());
             }
             // Show the target's subdirectories too: same listing as the file list.
-            if !row.is_expanded() && !row.item().and_downcast::<EntryObject>().is_some_and(|e| e.is_childless()) {
+            if expand_target && !row.is_expanded() && !row.item().and_downcast::<EntryObject>().is_some_and(|e| e.is_childless()) {
                 row.set_expanded(true);
             }
             let pos = row.position();
             this.state.borrow_mut().syncing_tree = true;
             this.tree.selection.set_selected(pos);
             this.state.borrow_mut().syncing_tree = false;
+            // Again over the next frames: rows bound in between can differ
+            // from the estimated height and leave the target just off screen.
             this.tree.view.scroll_to(pos, gtk::ListScrollFlags::NONE, None);
+            let weak = Rc::downgrade(&this);
+            let frames = Cell::new(0);
+            this.tree.view.add_tick_callback(move |view, _| {
+                frames.set(frames.get() + 1);
+                let Some(this) = weak.upgrade() else { return glib::ControlFlow::Break };
+                if this.state.borrow().reveal_gen != generation {
+                    return glib::ControlFlow::Break;
+                }
+                view.scroll_to(pos, gtk::ListScrollFlags::NONE, None);
+                if frames.get() < 3 { glib::ControlFlow::Continue } else { glib::ControlFlow::Break }
+            });
         });
     }
 
