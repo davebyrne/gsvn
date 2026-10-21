@@ -137,8 +137,9 @@ impl LogWindow {
             .action_name("log.refresh")
             .build();
         let header = adw::HeaderBar::builder().title_widget(&window_title).build();
-        header.pack_start(&refresh);
+        // Refresh next to the menu, as in the browser.
         header.pack_end(&common::main_menu_button(&common::main_menu()));
+        header.pack_end(&refresh);
 
         // Revision list.
         let store = gio::ListStore::new::<RevisionItem>();
