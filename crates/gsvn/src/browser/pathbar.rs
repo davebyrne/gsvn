@@ -28,6 +28,9 @@ impl PathBar {
             .hscrollbar_policy(gtk::PolicyType::External)
             .vscrollbar_policy(gtk::PolicyType::Never)
             .propagate_natural_height(true)
+            // Take the crumbs' width (up to all there is), not half of it
+            // with the filler.
+            .propagate_natural_width(true)
             .hexpand(true)
             .child(&crumbs)
             .build();
@@ -57,10 +60,18 @@ impl PathBar {
         widget.add_named(&frame, Some("crumbs"));
         widget.add_named(&entry, Some("entry"));
 
-        // Keep the current (last) segment visible.
-        scrolled
-            .hadjustment()
-            .connect_changed(|adj| adj.set_value(adj.upper() - adj.page_size()));
+        // Keep the current (last) segment visible. The adjustment changes
+        // while the scrolled window is being allocated, when a new value
+        // would not re-allocate the viewport (the crumbs stayed at the
+        // start), so set it from an idle.
+        scrolled.hadjustment().connect_changed(|adj| {
+            let adj = adj.downgrade();
+            glib::idle_add_local_once(move || {
+                if let Some(adj) = adj.upgrade() {
+                    adj.set_value(adj.upper() - adj.page_size());
+                }
+            });
+        });
 
         let bar = Rc::new(Self {
             widget,
@@ -169,11 +180,7 @@ impl PathBar {
                 .css_classes(["flat", "gsvn-crumb"])
                 .tooltip_text(decode(target.as_str()))
                 .build();
-            let text = gtk::Label::builder()
-                .label(&label)
-                .ellipsize(gtk::pango::EllipsizeMode::Middle)
-                .max_width_chars(32)
-                .build();
+            let text = crumb_label(&label);
             if i == 0 {
                 let b = gtk::Box::new(gtk::Orientation::Horizontal, 6);
                 b.append(&gtk::Image::from_icon_name("folder-remote-symbolic"));
@@ -193,5 +200,39 @@ impl PathBar {
             });
             self.crumbs.append(&button);
         }
+    }
+}
+
+/// Longest crumb shown in full; longer names are ellipsized to this.
+const CRUMB_MAX_CHARS: usize = 32;
+
+/// A crumb label whose minimum width is its natural width. The crumbs sit
+/// in a scrolled window that shrinks its child to the minimum, so an
+/// ellipsizing label would collapse every crumb to "…" in a deep path.
+fn crumb_label(text: &str) -> gtk::Label {
+    let label = gtk::Label::new(Some(text));
+    if crumb_needs_ellipsis(text) {
+        label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+        label.set_width_chars(CRUMB_MAX_CHARS as i32);
+        label.set_max_width_chars(CRUMB_MAX_CHARS as i32);
+    }
+    label
+}
+
+fn crumb_needs_ellipsis(text: &str) -> bool {
+    text.chars().count() > CRUMB_MAX_CHARS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn long_crumbs_are_ellipsized() {
+        assert!(!crumb_needs_ellipsis("d199"));
+        assert!(!crumb_needs_ellipsis(&"x".repeat(CRUMB_MAX_CHARS)));
+        assert!(crumb_needs_ellipsis(&"x".repeat(CRUMB_MAX_CHARS + 1)));
+        // Characters, not bytes.
+        assert!(!crumb_needs_ellipsis(&"é".repeat(CRUMB_MAX_CHARS)));
     }
 }
