@@ -20,7 +20,7 @@ use crate::app::Ctx;
 use adw::prelude::*;
 use gtk::glib;
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use svn_backend::{DiffSpec, RepoUrl};
 
 pub struct Hooks {
@@ -167,13 +167,28 @@ fn finish_shot(window: Rc<DiffWindow>, tries: u32) {
     }
 }
 
-/// A file was put into the views.
-pub fn rendered(window: &DiffWindow, rows: usize, elapsed: Duration) {
-    if window.debug.borrow().as_ref().is_some_and(|h| h.timing)
-        || std::env::var_os("GSVN_DIFF_TIMING").is_some()
+/// A file was put into the views (`started`: when it was selected). Also
+/// reports when the next frame has been painted, which includes the text
+/// views' layout of the visible part.
+pub fn rendered(window: &DiffWindow, rows: usize, started: Instant) {
+    if !(window.debug.borrow().as_ref().is_some_and(|h| h.timing)
+        || std::env::var_os("GSVN_DIFF_TIMING").is_some())
     {
-        eprintln!("diff: rendered {rows} rows in {elapsed:?}");
+        return;
     }
+    eprintln!("diff: rendered {rows} rows in {:?}", started.elapsed());
+    let Some(clock) = window.gtk_window().frame_clock() else {
+        return;
+    };
+    let handler = Rc::new(std::cell::Cell::new(None));
+    let h = handler.clone();
+    let id = clock.connect_after_paint(move |clock| {
+        eprintln!("diff: first paint after {:?}", started.elapsed());
+        if let Some(id) = h.take() {
+            clock.disconnect(id);
+        }
+    });
+    handler.set(Some(id));
 }
 
 fn screenshot(widget: &gtk::Widget, path: &str) -> Result<(), String> {

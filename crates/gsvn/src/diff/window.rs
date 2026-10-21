@@ -570,7 +570,7 @@ impl DiffWindow {
             }
         };
         #[cfg(debug_assertions)]
-        super::debug::rendered(self, rows, started.elapsed());
+        super::debug::rendered(self, rows, started);
         let _ = (rows, started);
     }
 
