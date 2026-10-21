@@ -3,6 +3,7 @@
 //!
 //! ```text
 //! GSVN_DEBUG_DIFF="URL REV"            open `-c REV` (instead of the start window)
+//! GSVN_DEBUG_DIFF="URL REV@PEG"      open `-c REV URL@PEG` (`ChangeAt`)
 //! GSVN_DEBUG_DIFF="URL FROM:TO[@PEG]"  open `-r FROM:TO URL@PEG` (PEG defaults to TO)
 //! GSVN_DIFF_SELECT=N        select file N once the diff has loaded
 //! GSVN_DIFF_SBS=1           switch to side-by-side
@@ -13,6 +14,8 @@
 //! GSVN_DIFF_QUIT=1          quit when loaded (after the shot, if any)
 //! GSVN_DIFF_TIMING=1        print timings and RSS to stderr
 //! GSVN_DIFF_LARGE_ROWS=N    large-file threshold override
+//! GSVN_DIFF_LIMIT=B[:L]     total size limit override (bytes[:lines], §7.3)
+//! GSVN_DIFF_LOAD_REST=1     press "Load the Rest" when loading pauses
 //! ```
 
 use super::window::{DiffWindow, FileItem};
@@ -20,13 +23,14 @@ use crate::app::Ctx;
 use adw::prelude::*;
 use gtk::glib;
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use svn_backend::{DiffSpec, RepoUrl};
 
 pub struct Hooks {
     select: Option<u32>,
     side_by_side: bool,
     show_large: bool,
+    load_rest: bool,
     shot: Option<String>,
     quit: bool,
     pub timing: bool,
@@ -52,6 +56,12 @@ fn parse_spec(s: &str) -> Option<DiffSpec> {
             None => to,
         };
         Some(DiffSpec::Range { url, peg, from, to })
+    } else if let Some((rev, peg)) = revs.split_once('@') {
+        Some(DiffSpec::ChangeAt {
+            url,
+            peg: peg.parse().ok()?,
+            rev: rev.parse().ok()?,
+        })
     } else {
         Some(DiffSpec::Change {
             url,
@@ -66,7 +76,7 @@ pub fn open(ctx: &Rc<Ctx>) -> bool {
         return false;
     };
     let Some(spec) = parse_spec(&spec) else {
-        eprintln!("GSVN_DEBUG_DIFF: expected \"URL REV\" or \"URL FROM:TO[@PEG]\"");
+        eprintln!("GSVN_DEBUG_DIFF: expected \"URL REV[@PEG]\" or \"URL FROM:TO[@PEG]\"");
         return false;
     };
     if env("GSVN_DIFF_DARK").is_some() {
@@ -76,6 +86,7 @@ pub fn open(ctx: &Rc<Ctx>) -> bool {
         select: env("GSVN_DIFF_SELECT").and_then(|v| v.parse().ok()),
         side_by_side: env("GSVN_DIFF_SBS").is_some(),
         show_large: env("GSVN_DIFF_SHOW_LARGE").is_some(),
+        load_rest: env("GSVN_DIFF_LOAD_REST").is_some(),
         shot: env("GSVN_DIFF_SHOT"),
         quit: env("GSVN_DIFF_QUIT").is_some(),
         timing: env("GSVN_DIFF_TIMING").is_some(),
@@ -107,12 +118,22 @@ pub fn finished(window: &Rc<DiffWindow>) {
     let Some(hooks) = window.debug.borrow_mut().take() else {
         return;
     };
+    let paused = window.is_paused();
     if hooks.timing {
         let (first, total, n) = window.timings();
         eprintln!(
-            "diff: {n} files, first file after {first:?}, complete after {total:?}, RSS {:.1} MB",
+            "diff: {n} files, first file after {first:?}, {} after {total:?}, RSS {:.1} MB",
+            if paused { "paused" } else { "complete" },
             rss_mb()
         );
+    }
+    if paused && hooks.load_rest {
+        window.debug.replace(Some(Hooks {
+            load_rest: false,
+            ..hooks
+        }));
+        window.load_rest();
+        return;
     }
     if let Some(i) = hooks.select {
         window.select(i);
@@ -132,6 +153,7 @@ pub fn finished(window: &Rc<DiffWindow>) {
         select: None,
         side_by_side: false,
         show_large: false,
+        load_rest: false,
         ..hooks
     }));
     glib::timeout_add_local_once(Duration::from_millis(1500), move || {
@@ -167,13 +189,28 @@ fn finish_shot(window: Rc<DiffWindow>, tries: u32) {
     }
 }
 
-/// A file was put into the views.
-pub fn rendered(window: &DiffWindow, rows: usize, elapsed: Duration) {
-    if window.debug.borrow().as_ref().is_some_and(|h| h.timing)
-        || std::env::var_os("GSVN_DIFF_TIMING").is_some()
+/// A file was put into the views (`started`: when it was selected). Also
+/// reports when the next frame has been painted, which includes the text
+/// views' layout of the visible part.
+pub fn rendered(window: &DiffWindow, rows: usize, started: Instant) {
+    if !(window.debug.borrow().as_ref().is_some_and(|h| h.timing)
+        || std::env::var_os("GSVN_DIFF_TIMING").is_some())
     {
-        eprintln!("diff: rendered {rows} rows in {elapsed:?}");
+        return;
     }
+    eprintln!("diff: rendered {rows} rows in {:?}", started.elapsed());
+    let Some(clock) = window.gtk_window().frame_clock() else {
+        return;
+    };
+    let handler = Rc::new(std::cell::Cell::new(None));
+    let h = handler.clone();
+    let id = clock.connect_after_paint(move |clock| {
+        eprintln!("diff: first paint after {:?}", started.elapsed());
+        if let Some(id) = h.take() {
+            clock.disconnect(id);
+        }
+    });
+    handler.set(Some(id));
 }
 
 fn screenshot(widget: &gtk::Widget, path: &str) -> Result<(), String> {
@@ -215,6 +252,14 @@ mod tests {
             Some(DiffSpec::Range {
                 from: 3,
                 to: 9,
+                peg: 20,
+                ..
+            })
+        ));
+        assert!(matches!(
+            parse_spec("http://h/r/f.c 3@20"),
+            Some(DiffSpec::ChangeAt {
+                rev: 3,
                 peg: 20,
                 ..
             })

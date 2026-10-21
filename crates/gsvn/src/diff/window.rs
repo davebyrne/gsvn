@@ -1,6 +1,7 @@
 //! The diff window: file sidebar fed by the streamed diff, and a unified or
 //! side-by-side view of the selected file (DESIGN.md §7).
 
+use super::limit::{self, Budget, Incoming, Resume};
 use super::model::{self, FileStatus, FileSummary, LARGE_ROWS};
 use super::view::{Column, DiffView};
 use crate::app::Ctx;
@@ -23,6 +24,14 @@ pub struct FileItem {
     pub summary: FileSummary,
     /// The user confirmed rendering this large file.
     pub show_large: Cell<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BannerAction {
+    /// The diff failed part way: run it again.
+    Retry,
+    /// Loading paused at the size limit: load the rest.
+    LoadRest,
 }
 
 /// A built render model, ready to put into the views.
@@ -77,6 +86,14 @@ pub struct DiffWindow {
     generation: Cell<u64>,
     started: Cell<Instant>,
     first_file_at: Cell<Option<Instant>>,
+    /// Size of the received diff against the §7.3 limit.
+    budget: Cell<Budget>,
+    /// The user chose to load the whole diff.
+    unlimited: Cell<bool>,
+    /// Set while re-running the diff to load the rest after a pause.
+    resume: Cell<Option<Resume>>,
+    /// What the banner's button does.
+    banner_action: Cell<BannerAction>,
     #[cfg(debug_assertions)]
     pub(super) debug: RefCell<Option<super::debug::Hooks>>,
 }
@@ -93,7 +110,9 @@ fn url_path(url: &RepoUrl) -> String {
 
 fn spec_url(spec: &DiffSpec) -> &RepoUrl {
     match spec {
-        DiffSpec::Change { url, .. } | DiffSpec::ChangeAt { url, .. } | DiffSpec::Range { url, .. } => url,
+        DiffSpec::Change { url, .. }
+        | DiffSpec::ChangeAt { url, .. }
+        | DiffSpec::Range { url, .. } => url,
     }
 }
 
@@ -105,10 +124,18 @@ fn title_for(spec: &DiffSpec, path: &str) -> String {
     }
 }
 
-/// URL of a file in the diff. svn prints paths relative to the target;
-/// when the target is a file, the path is just its name.
-fn file_url(spec: &DiffSpec, path: &str) -> RepoUrl {
-    let base = spec_url(spec);
+/// Revision at which the diff target's URL is valid.
+fn spec_peg(spec: &DiffSpec) -> RevNum {
+    match *spec {
+        DiffSpec::Change { rev, .. } => rev,
+        DiffSpec::ChangeAt { peg, .. } | DiffSpec::Range { peg, .. } => peg,
+    }
+}
+
+/// URL of a file in the diff, given the target's URL (`base`) at the
+/// revision of interest. svn prints paths relative to the target; when the
+/// target is a file, the path is just its name.
+fn file_url(base: &RepoUrl, path: &str) -> RepoUrl {
     if path.is_empty() || path == "." || (!path.contains('/') && base.name() == path) {
         base.clone()
     } else {
@@ -119,7 +146,9 @@ fn file_url(spec: &DiffSpec, path: &str) -> RepoUrl {
 /// Old and new revision of the two sides.
 fn sides(spec: &DiffSpec) -> (RevNum, RevNum) {
     match *spec {
-        DiffSpec::Change { rev, .. } | DiffSpec::ChangeAt { rev, .. } => (rev.saturating_sub(1), rev),
+        DiffSpec::Change { rev, .. } | DiffSpec::ChangeAt { rev, .. } => {
+            (rev.saturating_sub(1), rev)
+        }
         DiffSpec::Range { from, to, .. } => (from, to),
     }
 }
@@ -153,6 +182,10 @@ impl DiffWindow {
             generation: Cell::new(0),
             started: Cell::new(Instant::now()),
             first_file_at: Cell::new(None),
+            budget: Cell::new(Budget::unlimited()),
+            unlimited: Cell::new(false),
+            resume: Cell::new(None),
+            banner_action: Cell::new(BannerAction::Retry),
             #[cfg(debug_assertions)]
             debug: RefCell::new(None),
         });
@@ -195,7 +228,10 @@ impl DiffWindow {
         let weak = Rc::downgrade(self);
         ui.banner.connect_button_clicked(move |_| {
             if let Some(this) = weak.upgrade() {
-                this.start();
+                match this.banner_action.get() {
+                    BannerAction::Retry => this.start(),
+                    BannerAction::LoadRest => this.load_rest(),
+                }
             }
         });
     }
@@ -246,10 +282,7 @@ impl DiffWindow {
 
     /// Replace the URL path in the title by the repository path once known.
     fn resolve_title(self: &Rc<Self>) {
-        let peg = match self.spec {
-            DiffSpec::Change { rev, .. } => rev,
-            DiffSpec::ChangeAt { peg, .. } | DiffSpec::Range { peg, .. } => peg,
-        };
+        let peg = spec_peg(&self.spec);
         let job = self
             .ctx
             .svn
@@ -273,63 +306,144 @@ impl DiffWindow {
 
     /// (Re)start the streaming diff from scratch.
     fn start(self: &Rc<Self>) {
+        self.ui.store.remove_all();
+        self.resume.set(None);
+        self.ui.outer.set_visible_child_name("loading");
+        self.ui.count_label.set_label("Loading…");
+        self.run();
+    }
+
+    /// Loading paused at the size limit: run svn again without a limit,
+    /// skipping the files already in the list.
+    pub(super) fn load_rest(self: &Rc<Self>) {
+        self.unlimited.set(true);
+        self.resume.set(Some(Resume::new(self.ui.store.n_items())));
+        self.ui
+            .count_label
+            .set_label(&files_label(self.ui.store.n_items(), "…"));
+        self.run();
+    }
+
+    fn run(self: &Rc<Self>) {
         self.stop_task();
         let ui = &self.ui;
-        ui.store.remove_all();
         ui.banner.set_revealed(false);
-        ui.outer.set_visible_child_name("loading");
         ui.spinner.set_visible(true);
         ui.cancel_button.set_visible(true);
-        ui.count_label.set_label("Loading…");
         self.started.set(Instant::now());
         self.first_file_at.set(None);
+        self.budget.set(if self.unlimited.get() {
+            Budget::unlimited()
+        } else {
+            limit_budget()
+        });
 
         let mut stream = self.ctx.svn.diff(&self.spec, Priority::Interactive);
         let weak = Rc::downgrade(self);
         let task = glib::spawn_future_local(async move {
             let mut error = None;
+            let mut paused = false;
             while let Some(batch) = stream.next().await {
                 let Some(this) = weak.upgrade() else { return };
                 match batch {
-                    Ok(files) => this.append(files),
+                    Ok(files) => {
+                        if !this.append(files) {
+                            paused = true;
+                            break;
+                        }
+                    }
                     Err(err) => {
                         error = Some(err);
                         break;
                     }
                 }
             }
+            // Dropping the stream stops svn.
             drop(stream);
             if let Some(this) = weak.upgrade() {
-                this.finish(error);
+                if paused {
+                    this.pause();
+                } else {
+                    this.finish(error);
+                }
             }
         });
         self.task.replace(Some(task));
     }
 
-    fn append(self: &Rc<Self>, files: Vec<FileDiff>) {
-        if files.is_empty() {
-            return;
-        }
+    /// Add received files to the list; `false` once the size limit is
+    /// reached (the stream should stop).
+    fn append(self: &Rc<Self>, files: Vec<FileDiff>) -> bool {
         let ui = &self.ui;
-        let objects: Vec<glib::BoxedAnyObject> = files
-            .into_iter()
-            .map(|f| {
-                glib::BoxedAnyObject::new(FileItem {
-                    summary: model::summarize(&f),
-                    diff: Arc::new(f),
-                    show_large: Cell::new(false),
-                })
-            })
-            .collect();
+        let mut budget = self.budget.get();
+        let mut resume = self.resume.get();
+        let mut objects = Vec::with_capacity(files.len());
+        let mut more = true;
+        for f in files {
+            if let Some(r) = &mut resume {
+                let store = &ui.store;
+                let same = |i| {
+                    item_at(store, i).is_some_and(|o| o.borrow::<FileItem>().diff.path == f.path)
+                };
+                match r.next(same) {
+                    Incoming::Skip => continue,
+                    Incoming::Keep => {}
+                    Incoming::Diverged => {
+                        // svn's output changed since the first run: drop
+                        // the stored files from here on.
+                        let kept = r.kept();
+                        store.splice(kept, store.n_items() - kept, &[] as &[glib::Object]);
+                    }
+                }
+            }
+            if budget.exceeded() {
+                more = false;
+                break;
+            }
+            budget.add(&f);
+            objects.push(glib::BoxedAnyObject::new(FileItem {
+                summary: model::summarize(&f),
+                diff: Arc::new(f),
+                show_large: Cell::new(false),
+            }));
+        }
+        self.budget.set(budget);
+        self.resume.set(resume);
+        if objects.is_empty() {
+            return more;
+        }
         let first = ui.store.n_items() == 0;
         ui.store.extend_from_slice(&objects);
         ui.count_label
             .set_label(&files_label(ui.store.n_items(), "…"));
-        if first {
+        if first || self.first_file_at.get().is_none() {
             self.first_file_at.set(Some(Instant::now()));
+        }
+        if first {
             ui.outer.set_visible_child_name("main");
         }
         self.update_nav();
+        more
+    }
+
+    /// The size limit was reached and svn stopped (DESIGN.md §7.3).
+    fn pause(self: &Rc<Self>) {
+        self.task.take();
+        let ui = &self.ui;
+        ui.spinner.set_visible(false);
+        ui.cancel_button.set_visible(false);
+        let n = ui.store.n_items();
+        ui.count_label.set_label(&files_label(n, " (paused)"));
+        ui.banner
+            .set_title(&glib::markup_escape_text(&large_diff_title(
+                n,
+                self.budget.get().bytes,
+            )));
+        ui.banner.set_button_label(Some("Load the _Rest"));
+        self.banner_action.set(BannerAction::LoadRest);
+        ui.banner.set_revealed(true);
+        #[cfg(debug_assertions)]
+        super::debug::finished(self);
     }
 
     fn finish(self: &Rc<Self>, error: Option<SvnError>) {
@@ -354,6 +468,8 @@ impl DiffWindow {
             }
             Some(err) => {
                 ui.count_label.set_label(&files_label(n, " (incomplete)"));
+                ui.banner.set_button_label(Some("_Retry"));
+                self.banner_action.set(BannerAction::Retry);
                 ui.banner.set_title(&glib::markup_escape_text(&format!(
                     "The diff is incomplete: {}",
                     err.to_string().lines().next().unwrap_or_default()
@@ -463,6 +579,14 @@ impl DiffWindow {
         &self.ui.window
     }
 
+    /// Loading is paused at the size limit.
+    #[cfg(debug_assertions)]
+    pub(super) fn is_paused(&self) -> bool {
+        self.task.borrow().is_none()
+            && self.ui.banner.is_revealed()
+            && self.banner_action.get() == BannerAction::LoadRest
+    }
+
     #[cfg(debug_assertions)]
     pub(super) fn selected_item(&self) -> Option<glib::BoxedAnyObject> {
         item_at(&self.ui.selection, self.ui.selection.selected())
@@ -570,7 +694,7 @@ impl DiffWindow {
             }
         };
         #[cfg(debug_assertions)]
-        super::debug::rendered(self, rows, started.elapsed());
+        super::debug::rendered(self, rows, started);
         let _ = (rows, started);
     }
 
@@ -621,12 +745,16 @@ impl DiffWindow {
         page.set_child(Some(&details));
         self.show_status(page);
 
-        let url = file_url(&self.spec, &diff.path);
+        // The target may have been renamed or moved since either side
+        // (`ChangeAt`, `Range` with a later peg): resolve its URL at each
+        // side's revision first, then look up the file there.
+        let target = spec_url(&self.spec).clone();
+        let peg = spec_peg(&self.spec);
         let (old_rev, new_rev) = sides(&self.spec);
-        let svn = &self.ctx.svn;
-        let old = svn.info(&url, &Rev::Number(old_rev), Priority::Normal);
-        let new = svn.info(&url, &Rev::Number(new_rev), Priority::Normal);
-        let props = svn.proplist(&url, new_rev, Priority::Normal);
+        let path = diff.path.clone();
+        let svn = self.ctx.svn.clone();
+        let old_base = svn.info_at(&target, peg, old_rev, Priority::Normal);
+        let new_base = svn.info_at(&target, peg, new_rev, Priority::Normal);
         let prop_lines: Vec<String> = diff
             .prop_changes
             .iter()
@@ -641,18 +769,47 @@ impl DiffWindow {
             .collect();
         let details = details.downgrade();
         let task = glib::spawn_future_local(async move {
-            let size = |r: Result<svn_backend::Info, SvnError>| {
-                r.ok()
-                    .and_then(|i| i.size)
+            let size = |i: Option<svn_backend::Info>| {
+                i.and_then(|i| i.size)
                     .map_or_else(|| "—".to_owned(), common::format_size)
             };
-            let old = size(old.result().await);
-            let new = size(new.result().await);
-            let mime = props.result().await.ok().and_then(|p| {
+            // `url` of the file on the side at `rev`, once the target's
+            // URL there is known.
+            let file_at = |base: Result<svn_backend::Info, SvnError>| {
+                base.ok().map(|i| file_url(&i.url, &path))
+            };
+            let old_url = file_at(old_base.result().await);
+            let new_url = file_at(new_base.result().await);
+            let info = |url: &Option<RepoUrl>, rev| {
+                url.as_ref()
+                    .map(|u| svn.info(u, &Rev::Number(rev), Priority::Normal))
+            };
+            let (old, new) = (info(&old_url, old_rev), info(&new_url, new_rev));
+            let old = match old {
+                Some(job) => job.result().await.ok(),
+                None => None,
+            };
+            let new = match new {
+                Some(job) => job.result().await.ok(),
+                None => None,
+            };
+            // MIME type from the new side, or the old one for a deletion.
+            let props_at = if new.is_some() {
+                new_url.map(|u| (u, new_rev))
+            } else {
+                old_url.map(|u| (u, old_rev))
+            };
+            let mime = match props_at {
+                Some((u, rev)) => svn.proplist(&u, rev, Priority::Normal).result().await.ok(),
+                None => None,
+            }
+            .and_then(|p| {
                 p.into_iter()
                     .find(|p| p.name == "svn:mime-type")
                     .map(|p| p.value)
             });
+            let old = size(old);
+            let new = size(new);
             let Some(details) = details.upgrade() else {
                 return;
             };
@@ -668,6 +825,31 @@ impl DiffWindow {
         });
         self.file_task.replace(Some(task));
     }
+}
+
+/// The §7.3 limit (debug builds: `GSVN_DIFF_LIMIT=BYTES[:LINES]`).
+fn limit_budget() -> Budget {
+    #[cfg(debug_assertions)]
+    if let Some(v) = std::env::var("GSVN_DIFF_LIMIT")
+        .ok()
+        .filter(|v| !v.is_empty())
+    {
+        let (bytes, lines) = v.split_once(':').unwrap_or((&v, ""));
+        return Budget::new(
+            bytes.parse().unwrap_or(limit::LIMIT_BYTES),
+            lines.parse().unwrap_or(limit::LIMIT_LINES),
+        );
+    }
+    Budget::new(limit::LIMIT_BYTES, limit::LIMIT_LINES)
+}
+
+/// Banner text when loading paused at the limit.
+fn large_diff_title(files: u32, bytes: u64) -> String {
+    format!(
+        "This diff is large ({}, ~{}). Load the rest?",
+        files_label(files, ""),
+        common::format_size(bytes)
+    )
 }
 
 fn large_rows() -> usize {
@@ -1010,18 +1192,25 @@ mod tests {
         assert_eq!(sides(&range), (10, 20));
 
         assert_eq!(
-            file_url(&change, "sub/a b.c").as_str(),
+            file_url(&url, "sub/a b.c").as_str(),
             "https://h/svn/repo/trunk/my%20dir/sub/a%20b.c"
         );
-        assert_eq!(file_url(&change, "my dir").as_str(), url.as_str());
-        assert_eq!(file_url(&change, ".").as_str(), url.as_str());
-        let file = DiffSpec::Change {
-            url: RepoUrl::parse("https://h/r/Makefile").unwrap(),
-            rev: 2,
-        };
+        assert_eq!(file_url(&url, "my dir").as_str(), url.as_str());
+        assert_eq!(file_url(&url, ".").as_str(), url.as_str());
+        let file = RepoUrl::parse("https://h/r/Makefile").unwrap();
         assert_eq!(file_url(&file, "Makefile").as_str(), "https://h/r/Makefile");
+        assert_eq!(spec_peg(&change), 1234);
+        assert_eq!(spec_peg(&range), 30);
+        let at = DiffSpec::ChangeAt {
+            url: url.clone(),
+            peg: 50,
+            rev: 7,
+        };
+        assert_eq!(spec_peg(&at), 50);
+        assert_eq!(sides(&at), (6, 7));
 
         assert_eq!(files_label(1, ""), "1 file");
+        assert!(large_diff_title(3, 6_000_000).starts_with("This diff is large (3 files, ~6"));
         assert_eq!(files_label(3, "…"), "3 files…");
         assert_eq!(file_name("a/b/c.rs"), "c.rs");
     }
