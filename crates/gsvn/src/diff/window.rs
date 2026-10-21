@@ -93,14 +93,14 @@ fn url_path(url: &RepoUrl) -> String {
 
 fn spec_url(spec: &DiffSpec) -> &RepoUrl {
     match spec {
-        DiffSpec::Change { url, .. } | DiffSpec::Range { url, .. } => url,
+        DiffSpec::Change { url, .. } | DiffSpec::ChangeAt { url, .. } | DiffSpec::Range { url, .. } => url,
     }
 }
 
 /// `r1234 — /trunk/src` or `r10:r20 — /trunk/foo.c`.
 fn title_for(spec: &DiffSpec, path: &str) -> String {
     match spec {
-        DiffSpec::Change { rev, .. } => format!("r{rev} — {path}"),
+        DiffSpec::Change { rev, .. } | DiffSpec::ChangeAt { rev, .. } => format!("r{rev} — {path}"),
         DiffSpec::Range { from, to, .. } => format!("r{from}:r{to} — {path}"),
     }
 }
@@ -119,7 +119,7 @@ fn file_url(spec: &DiffSpec, path: &str) -> RepoUrl {
 /// Old and new revision of the two sides.
 fn sides(spec: &DiffSpec) -> (RevNum, RevNum) {
     match *spec {
-        DiffSpec::Change { rev, .. } => (rev.saturating_sub(1), rev),
+        DiffSpec::Change { rev, .. } | DiffSpec::ChangeAt { rev, .. } => (rev.saturating_sub(1), rev),
         DiffSpec::Range { from, to, .. } => (from, to),
     }
 }
@@ -248,7 +248,7 @@ impl DiffWindow {
     fn resolve_title(self: &Rc<Self>) {
         let peg = match self.spec {
             DiffSpec::Change { rev, .. } => rev,
-            DiffSpec::Range { peg, .. } => peg,
+            DiffSpec::ChangeAt { peg, .. } | DiffSpec::Range { peg, .. } => peg,
         };
         let job = self
             .ctx
@@ -698,8 +698,8 @@ fn build_ui(ctx: &Rc<Ctx>, spec: &DiffSpec) -> Ui {
     let title_text = title_for(spec, &url_path(url));
     let window = common::new_window(ctx, "diff", &title_text, (1200, 800));
     let mut subtitle = decode(url.as_str());
-    if let DiffSpec::Range { peg, to, .. } = spec
-        && peg != to
+    if let DiffSpec::Range { peg, to: rev, .. } | DiffSpec::ChangeAt { peg, rev, .. } = spec
+        && peg != rev
     {
         subtitle.push_str(&format!("@{peg}"));
     }
