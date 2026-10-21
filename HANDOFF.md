@@ -1,173 +1,139 @@
-# gsvn — Handoff (paused 2026-10-15)
+# gsvn — Handoff (updated 2026-10-21)
 
-Read `DESIGN.md` first. This file records where the work stopped and how to
+Read `DESIGN.md` first. This file records the state of the work and how to
 pick it up.
 
 ## TL;DR
 
 - **Integration branch:** `develop`. **`master`** still holds only the design
   doc; nothing is merged there or pushed anywhere.
-- **On `develop`:** backend (runner, parsers, cache), test infrastructure,
-  app shell (settings, auth dialogs, start window, CLI), **log window**. All
-  122 tests pass; the only clippy warnings are dead code in modules that are
-  not merged yet.
-- **Finished but not merged:** `ui/viewer` (bd971f6) and `ui/diff` (c6d471e).
-- **Unfinished:** `ui/browser` (75ce831, a `WIP:` commit). It builds but needs
-  tests, clippy and verification (see below).
-- **Next session:** merge viewer and diff → finish the browser → merge → run
-  the whole app end to end → polish.
+- **On `develop`:**
+  - the backend, test infrastructure and app shell
+  - all four windows: browser, log, diff, viewer/blame
+  - the end-to-end pass, the release performance pass and the polish pass
+- **Build state:**
+  - `cargo test`: 191 pass, and `GSVN_TEST_HTTP=1` passes too
+  - `cargo clippy --all-targets`: zero warnings
+  - the release build runs cleanly
+- **All HANDOFF next steps from 2026-10-15 are done.** What is left is
+  listed under "Open items" below.
 
 ## Branches
 
-| Branch | Head | State | Notes |
-|---|---|---|---|
-| `develop` | see `git log` | integration | everything below marked "merged" |
-| `infra/test-repos` | 58bf5a8 | merged | Docker test server + repo generator |
-| `backend/parsers` | 905b294 | merged | 6 streaming parsers + fixtures |
-| `backend/runner` | 9ab090b | merged | runner, limiter, auth/cert, cache |
-| `ui/shell` | 5c1ccc7 | merged | settings, auth UI, start window, CLI, desktop file |
-| `ui/log` | f4c3a64 | merged | log window §6 |
-| `ui/viewer` | bd971f6 | **done, merge next** | viewer + blame §8 |
-| `ui/diff` | c6d471e | **done, merge next** | diff window §7; perf runs pending |
-| `ui/browser` | 75ce831 | **WIP** | browser §5; see "Browser: remaining work" |
+All of these are merged into `develop` with `--no-ff`, and all agent
+worktrees have been removed. The branches are kept only for history.
 
-Agent worktrees live in `.claude/worktrees/agent-*` (gitignored). The branches
-hold everything; the worktrees can be removed with `git worktree remove`
-(some are locked: use `git worktree unlock` first) once nothing is running
-in them. The `worktree-agent-*` branches are leftovers from worktree creation
-and can be deleted.
-
-### Expected merge conflicts
-
-- `crates/gsvn/src/app.rs`: viewer and diff each add a debug-only hook.
-  - viewer: `#[cfg(debug_assertions)] crate::viewer::debug::hook(&ctx);` in `connect_startup`
-  - diff: `#[cfg(debug_assertions)] if crate::diff::debug_open(ctx) { return SUCCESS }` at the top of `handle_command_line`
-  - Keep both.
-- `Cargo.lock` (diff adds `similar 3.2.0`): resolve with `cargo build`, then
-  check that no crate newer than 2 weeks was pulled in.
+| Branch | Content |
+|---|---|
+| `infra/test-repos` | Docker test server and repo generator |
+| `backend/parsers` | 6 streaming parsers and fixtures |
+| `backend/runner` | runner, limiter, auth/cert, cache |
+| `ui/shell` | settings, auth UI, start window, CLI, desktop file |
+| `ui/log` | log window §6 |
+| `ui/viewer` | viewer and blame §8 |
+| `ui/diff` | diff window §7 |
+| `ui/browser` | browser §5 |
+| `backend/peg` | `DiffSpec::ChangeAt` and `Svn::info_at`, for paths renamed since an older revision |
+| `perf/diff` | §7.3 total diff size limit, binary details across renames, diff measurements |
+| `e2e/links` | cross-window pass, `GSVN_E2E_SCRIPT` hook, 7 link and menu bugs fixed |
+| `perf/release` | release-build §13 measurements, compact browser model and caches |
+| `polish/ui` | shortcuts dialog, state persistence, scaffolding removed, header nits |
 
 ## Process
 
-- **Contract first:** the public API of `svn-backend` (`lib.rs`, `model.rs`,
-  `error.rs`, `job.rs`, `url.rs`, `svn.rs`, `parse/mod.rs`) and the `open(...)`
-  functions of each window module are the contracts that parallel agents
-  coded against. Change them only additively, and only on purpose.
-- **Ownership** (used for parallel agents): each agent owns one directory
-  under `crates/gsvn/src/` (`browser/`, `log/`, `diff/`, `viewer/`). Shared
-  files (`common.rs`, `app.rs`, `settings.rs`) get only minimal, additive
-  edits.
+- **Contract first:** the public API of `svn-backend` is a contract. Change it
+  only additively and on purpose.
 - **Branches:** one branch per piece of work, merged into `develop` with
   `--no-ff`. Never merge to `master` or push without asking the user.
 - **Dependencies:** pin crate versions that are at least 2 weeks old
-  (`cargo update -p X --precise V`). Already pinned back: jiff 0.2.37,
-  toml 1.1.6, plus async-recursion, uuid, zerocopy and zeroize (see the
-  ui/shell commit).
+  (`cargo update -p X --precise V`). libadwaita uses the `v1_8` feature,
+  because the shortcuts dialog is `AdwShortcutsDialog`.
+- **Formatting:** the tree is **not** `cargo fmt` clean, and a full format
+  touches about 20 files. Format only the lines you change, or do a full
+  format as its own commit.
 - **Commits** end with a `Co-Authored-By:` line for Claude.
 
 ## Running and testing
 
 ```sh
 cargo build && cargo test && cargo clippy --all-targets
-GSVN_TEST_HTTP=1 cargo test          # also the 6 HTTP auth/cert tests (needs the test server)
+GSVN_TEST_HTTP=1 cargo test          # also the HTTP auth/cert/peg tests (needs the test server)
 GSVN_CONFIG_DIR=$(mktemp -d) cargo run -- http://localhost:8080/svn/small
 cargo run -- --log http://localhost:8080/svn/history/trunk
 ```
 
-The app ID is single-instance: a plain `cargo run` may be forwarded to an
-already running gsvn. For automated or headless runs use
+The app ID is single-instance. For automated or headless runs, use
 `scripts/headless.sh <binary>`, which starts a private headless mutter and
-D-Bus session.
+D-Bus session with a throwaway config dir. For a criticals run, use
+`scripts/headless.sh env G_DEBUG=fatal-criticals target/debug/gsvn …`;
+setting it for all of `headless.sh` aborts mutter on its own critical.
 
 ### Test server (Docker)
 
-`scripts/test-server.sh up|down|status|logs|rebuild`. The repos are in
-`target/test-repos/` (370 MB, generated by `scripts/make-test-repos.py`;
-`history` takes about 5–10 min to regenerate). Details are in
-`test-server/README.md`.
-
-- `http://localhost:8080/svn/<repo>`: anonymous
-- `http://localhost:8080/auth/<repo>`: Basic auth `test`/`test`
-- `https://localhost:8443/svn/<repo>`: self-signed certificate
-- `http://localhost:8080/slow/<repo>`: limited to 64 KiB/s
-- Repos:
-  - `small`: realistic history with branches, renames, a binary file, a 2.4 MB file
-  - `wide`: `trunk/wide20k`, `trunk/wide100k`
-  - `deep`: 200 levels deep
-  - `history`: 200k revisions; r100000 touches 50,001 paths
-
-The server was **stopped** at pause time; `scripts/test-server.sh up` brings
-it back. Apache needs `SVNInMemoryCacheSize 262144` (already in
-`httpd.conf`), or the 100k listing takes minutes server-side.
-
-Public read-only repo for light testing: `https://svn.apache.org/repos/asf`
-(1.9M revisions).
+Run `scripts/test-server.sh up|down|status|logs|rebuild`; details are in
+`test-server/README.md`. The test server was left **running**. The endpoints
+are `/svn/` (anonymous), `/auth/` (`test`/`test`), `https://…:8443`
+(self-signed) and `/slow/` (64 KiB/s). The repos are `small`, `wide`, `deep`
+and `history`.
 
 ### Debug hooks (debug builds only)
 
-Each window has an env-var driven hook that can open the window directly,
-script actions and save a PNG screenshot. This is how the agents checked the
-UI visually:
+- **Per window:**
+  - browser: `GSVN_BROWSER_*`
+  - log: `GSVN_LOG_SCRIPT`
+  - diff: `GSVN_DEBUG_DIFF` and `GSVN_DIFF_*`. `GSVN_DIFF_LIMIT=BYTES[:LINES]`
+    and `GSVN_DIFF_LOAD_REST=1` control the size limit; `URL REV@PEG` opens a
+    `ChangeAt` diff.
+  - viewer: `GSVN_DEBUG_VIEWER*`
+  - auth dialogs: `GSVN_DEBUG_PROMPTS`
+  - startup timing: `GSVN_DEBUG_STARTUP`
+  - Each file's doc comment lists its steps.
+- **Across windows:** `GSVN_E2E_SCRIPT` (`crates/gsvn/src/e2e.rs`) sends each
+  step to the newest window, or to the one chosen with `win=`. It can:
+  - answer the auth and cert dialogs
+  - drive the in-process file chooser (`GDK_DEBUG=no-portals`)
+  - check titles
+  - flag cut-off popovers
+  - take screenshots that include popovers
 
-- **Browser** (`browser/debug.rs`): `GSVN_BROWSER_SNAPSHOT=out.png`,
-  `GSVN_BROWSER_SNAPSHOT_AT=secs`, `GSVN_BROWSER_DARK=1`,
-  `GSVN_BROWSER_SCRIPT="secs:cmd;…"` (`goto=`, `action=`, `filter=`, `menu=N`,
-  `tree=N`, `revpopover`, `dump=N`). In all builds, `G_MESSAGES_DEBUG=gsvn-browser`
-  logs timings and RSS.
-- **Log** (`log/debug.rs`): `GSVN_LOG_SCRIPT="wait;load:5000;rss;selectrev:N;waitpaths;search:…;shot:FILE.png;quit"`,
-  `GSVN_LOG_DEBUG=1` prints timings.
-- **Diff** (`diff/debug.rs`): `GSVN_DEBUG_DIFF="URL REV"` or `"URL FROM:TO[@PEG]"`,
-  plus `GSVN_DIFF_SELECT`, `_SBS`, `_DARK`, `_SHOW_LARGE`, `_SHOT=png`,
-  `_QUIT`, `_TIMING`.
-- **Viewer** (`viewer/debug.rs`): `GSVN_DEBUG_VIEWER='URL@REV'`,
-  `GSVN_DEBUG_VIEWER_MODE=blame`, `GSVN_DEBUG_VIEWER_STEPS='idle;shot=PATH;dark;…'`.
-- **Auth dialogs:** `GSVN_DEBUG_PROMPTS=1|rejected|cert`.
+  Use `action=app.quit`, not `quit`, when the window state must be saved.
+- **Keyring testing:** start an isolated gnome-keyring with
+  `--control-directory` and set `XDG_DATA_HOME` to a scratch dir. Never touch
+  the real login keyring.
 
-Screenshots from the agents are in the session scratchpad under `/tmp/` and
-**will not survive a reboot**. Regenerate them with the hooks above.
+## Open items
 
-## Next steps (in order)
-
-1. **Merge `ui/viewer` and `ui/diff`** into `develop` (keep both debug hooks
-   in `app.rs`). Run `cargo build && cargo test && cargo clippy --all-targets`.
-2. **Finish `ui/browser`:**
-   1. Re-check the last fix: in `wide/trunk/wide100k` the list must open at the
-      top with the 100 `sub*` folders first. Folders arrive last, so they used
-      to push the scroll anchor about 100 rows down. The fix is `list_touched`
-      plus `keep_top()` in `browser/mod.rs`; it's built but not re-tested.
-   2. Run `cargo test` and `cargo clippy --all-targets`; fix browser warnings.
-   3. Verify:
-      - `deep`: paste the leaf URL, time the jump, check the indent cap and depth badge
-      - `history` @ r100000, `trunk/generated`
-      - the `/slow/` endpoint: UI stays responsive, Cancel works
-      - `https://localhost:8443`: certificate dialog, no hang
-      - `svn.apache.org` root plus one level down
-      - one run under `G_DEBUG=fatal-criticals`
-   4. Light/dark screenshots and visual review. Known nit: the Rev and Size
-      headers are left-aligned while their values are right-aligned.
-   5. Fix "selecting a tree row also expands it".
-   6. Then merge.
-3. **Diff, pending checks:**
-   - `history` r100000 (50,001 files): time to first file, time to complete, RSS
-   - r4 render time in a release build (goal under 1 s)
-   - apache `-c 1938822` on `subversion/trunk`
-   - one run under `G_DEBUG=fatal-criticals`
-   - re-take the screenshots
-4. **End-to-end pass:** with all windows merged, check the links between
-   windows that could only be tested against placeholders:
-   - browser → viewer/log/blame
-   - log → diff/browser/viewer
-   - viewer gutter click → diff/log (popover menus were never seen
-     on screen)
-   - file dialogs (Save As)
-   - real login in the auth dialog (via `/auth/` and the keyring)
-5. **Release-build performance pass** against the DESIGN.md §13 budget. Idle
-   RSS is about 100 MB with `small` loaded, against a 60 MB target; check the
-   release build. A loaded 100k directory is about 168 MB, about 680 bytes
-   per entry; sharing author strings could reduce that.
-6. **Polish:**
-   - keyboard shortcuts dialog
-   - save the pane positions and the side-by-side preference
-   - remove the scaffolding: `common::placeholder_window`, and the `#[allow(dead_code)]` on `Svn.inner`, if still unused
+- **Performance (DESIGN §13 now has measured release numbers):**
+  - Idle RSS is about 101 MB against the original 60 MB target. The toolkit
+    baseline alone is 92–97 MB, and about 34 MB of that is the Vulkan loader
+    loading every Mesa driver. §13 now proposes "toolkit baseline + 10 MB";
+    the user should confirm that target.
+  - Filtering a 100k list takes 25–110 ms against the 50 ms target. The
+    filter itself takes at most 15 ms; the rest is GTK rebuilding the
+    visible row widgets. Fewer or lighter widgets per row, such as
+    `GtkInscription`, could help.
+  - Log rows cost about 310 B each and authors are not interned
+    (`RevisionItem`).
+- **Visual nits:**
+  - The log's Revision column is left-aligned, but the browser's Rev column
+    is right-aligned.
+  - The log shows "No Revision Selected" while its first page is loading.
+  - In the tree, a folder revealed at the bottom of the sidebar is selected
+    but its children are out of view.
+  - Makefile highlighting is minimal: the language is detected, but the
+    Adwaita scheme barely colors it.
+  - The changed line pair in apache r1938822 has no intra-line highlight.
+- **Shortcut change:** the viewer's Go to Line is now **Ctrl+I**; it was
+  Ctrl+L and Ctrl+G. Ctrl+G and Ctrl+Shift+G are Next and Previous Match.
+- **Not testable headlessly:**
+  - window focus
+  - real key presses for shortcuts (only their actions were checked)
+  - the portal file chooser
+  - popovers on inactive windows
+  - trusting a certificate in the dialog and then listing (the HTTP tests
+    cover the backend side)
+- **Next steps:** merge `develop` into `master` once the user has reviewed it
+  (ask first). Packaging (Flatpak/RPM) is post-v1, as in DESIGN §16.
 
 ## Known issues and gaps
 
@@ -177,12 +143,16 @@ Screenshots from the agents are in the session scratchpad under `/tmp/` and
   stop-on-copy first runs a probe that walks the whole branch.
 - **Blame** has no line-count progress: svn sends nothing until it finishes,
   so the window shows elapsed time instead.
-- **Auth:** a 403 response is classified as Auth, so it prompts up to 3
-  times. If the job that is showing a prompt is cancelled, a second prompt
-  can appear. The auth and cert dialogs can be on screen at the same time.
-- **Diff:** the §7.3 limit on total diff size is not implemented. Every
-  `FileDiff` stays in memory and only the selected file is rendered.
-- **Browser:** the directory cache has no eviction within a revision.
+- **Auth:**
+  - A 403 response is classified as Auth, so it prompts up to 3 times.
+  - The auth and cert dialogs can be on screen at the same time.
+  - A keyring that doesn't answer within 5 s is treated as unavailable for
+    the rest of the session.
+- **Diff:** once the total size limit is passed, loading pauses. "Load the
+  Rest" runs svn again from the start and skips files already listed.
+- **Caches:** the backend list cache is bounded (500k entries) and the
+  `log_entry` cache is bounded by changed paths (200k). The browser has no
+  per-revision eviction of its own.
 - **Large text files:** scrolling during the first ~1.2 s after loading a
   2.4 MB file can land on the wrong line, because GTK estimates line heights
   until it has measured them all. The viewer re-scrolls to work around it.
