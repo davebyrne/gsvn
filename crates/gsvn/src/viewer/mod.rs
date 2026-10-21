@@ -794,16 +794,16 @@ impl Viewer {
     fn show_binary(self: &Rc<Self>) {
         self.content.set(ContentState::Other);
         let guessed = {
+            // Not loaded (svn:mime-type said binary): guess from the name
+            // only; empty data would be guessed as an empty file.
             let data = self.data.borrow();
-            let head = data.as_deref().map(|d| &d[..d.len().min(4096)]).unwrap_or_default();
+            let head = data.as_deref().map(|d| &d[..d.len().min(4096)]);
             gio::content_type_guess(Some(self.name.borrow().as_str()), head).0
         };
-        let mime = self
-            .mime
-            .borrow()
-            .clone()
-            .or_else(|| gio::content_type_get_mime_type(&guessed).map(|m| m.to_string()))
-            .unwrap_or_else(|| "application/octet-stream".to_owned());
+        let mime = display_mime(
+            self.mime.borrow().as_deref(),
+            gio::content_type_get_mime_type(&guessed).as_deref(),
+        );
         let mut description = String::from("Binary file");
         if let Some(size) = self.size.get() {
             description.push_str(" · ");
@@ -1298,6 +1298,19 @@ fn mime_type(props: &[Property]) -> Option<String> {
         .filter(|m| !m.is_empty())
 }
 
+/// The MIME type to show for a binary file: `svn:mime-type`, unless it is
+/// missing or the generic `application/octet-stream` (what svn sets on any
+/// binary file it adds), then the type guessed by GIO.
+fn display_mime(svn_mime: Option<&str>, guessed: Option<&str>) -> String {
+    const GENERIC: &str = "application/octet-stream";
+    match (svn_mime.filter(|m| !m.is_empty()), guessed) {
+        (Some(m), _) if m != GENERIC => m.to_owned(),
+        (_, Some(g)) if !g.is_empty() && g != "application/x-zerosize" => g.to_owned(),
+        (Some(m), _) => m.to_owned(),
+        _ => GENERIC.to_owned(),
+    }
+}
+
 /// Language from the file name, then from a text `svn:mime-type`, then from
 /// the content type GIO guesses (which also looks at the data, e.g. `#!`).
 fn guess_language(name: &str, mime: Option<&str>, head: &[u8]) -> Option<sourceview5::Language> {
@@ -1317,6 +1330,18 @@ fn guess_language(name: &str, mime: Option<&str>, head: &[u8]) -> Option<sourcev
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn binary_mime() {
+        let generic = Some("application/octet-stream");
+        assert_eq!(display_mime(Some("image/x-foo"), Some("image/png")), "image/x-foo");
+        assert_eq!(display_mime(generic, Some("image/png")), "image/png");
+        assert_eq!(display_mime(None, Some("image/png")), "image/png");
+        assert_eq!(display_mime(Some(""), Some("image/png")), "image/png");
+        assert_eq!(display_mime(generic, None), "application/octet-stream");
+        assert_eq!(display_mime(None, Some("application/x-zerosize")), "application/octet-stream");
+        assert_eq!(display_mime(None, None), "application/octet-stream");
+    }
 
     #[test]
     fn elapsed() {
