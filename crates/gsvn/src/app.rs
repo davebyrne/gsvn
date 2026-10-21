@@ -38,6 +38,8 @@ pub struct Ctx {
 }
 
 pub fn run() -> glib::ExitCode {
+    #[cfg(debug_assertions)]
+    let started = std::time::Instant::now();
     let app = adw::Application::builder()
         .application_id(APP_ID)
         .flags(gio::ApplicationFlags::HANDLES_COMMAND_LINE)
@@ -78,7 +80,7 @@ pub fn run() -> glib::ExitCode {
         std::ops::ControlFlow::Continue(())
     });
 
-    app.connect_startup(|app| {
+    app.connect_startup(move |app| {
         // Uninstalled debug builds: find the app icon in the source tree.
         #[cfg(debug_assertions)]
         if let Some(display) = gtk::gdk::Display::default() {
@@ -95,6 +97,8 @@ pub fn run() -> glib::ExitCode {
         install_actions(&ctx);
         #[cfg(debug_assertions)]
         crate::viewer::debug::hook(&ctx);
+        #[cfg(debug_assertions)]
+        startup_timing_hook(app, started);
         {
             let ctx = ctx.clone();
             app.connect_activate(move |_| crate::start::open(&ctx));
@@ -197,6 +201,43 @@ fn open_log(ctx: &Rc<Ctx>, url: RepoUrl, rev: Option<RevNum>) {
                 );
             }
         }
+    });
+}
+
+/// Debug builds: with `GSVN_DEBUG_STARTUP` set, print when the first
+/// window has painted its first frame, then quit. The line carries the
+/// wall clock (`epoch_ms`) so a script can measure from exec, and the
+/// time since `main` (`since_main_ms`).
+#[cfg(debug_assertions)]
+fn startup_timing_hook(app: &adw::Application, started: std::time::Instant) {
+    if std::env::var_os("GSVN_DEBUG_STARTUP").is_none() {
+        return;
+    }
+    app.connect_window_added(move |app, window| {
+        if app.windows().len() != 1 {
+            return;
+        }
+        let app = app.clone();
+        window.connect_map(move |window| {
+            let Some(clock) = window.frame_clock() else { return };
+            let app = app.clone();
+            let done = std::cell::Cell::new(false);
+            clock.connect_after_paint(move |_| {
+                if done.replace(true) {
+                    return;
+                }
+                let epoch = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default();
+                eprintln!(
+                    "[gsvn-startup] first frame: epoch_ms={} since_main_ms={:.1}",
+                    epoch.as_millis(),
+                    started.elapsed().as_secs_f64() * 1000.0
+                );
+                let app = app.clone();
+                glib::idle_add_local_once(move || app.quit());
+            });
+        });
     });
 }
 
