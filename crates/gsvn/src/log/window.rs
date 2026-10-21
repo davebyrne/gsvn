@@ -1234,10 +1234,26 @@ impl LogWindow {
         }
     }
 
+    /// Browse the path as it was at the selected revision: the log follows
+    /// renames, so `url` (named at `peg`) is first resolved to its URL then.
     fn browse(&self) {
-        if let [entry] = self.selected_revisions().as_slice() {
-            crate::browser::open(&self.ctx, self.url.clone(), Some(entry.rev));
-        }
+        let rev = match self.selected_revisions().as_slice() {
+            [entry] => entry.rev,
+            _ => return,
+        };
+        let job = self.ctx.svn.info_at(&self.url, self.peg, rev, Priority::Interactive);
+        let (ctx, toasts) = (self.ctx.clone(), self.toasts.clone());
+        common::spawn(async move {
+            match job.result().await {
+                Ok(info) => crate::browser::open(&ctx, info.url, Some(rev)),
+                Err(e) => toasts.add_toast(
+                    adw::Toast::builder()
+                        .title(glib::markup_escape_text(&format!("Cannot browse r{rev}: {}", e.message)))
+                        .timeout(5)
+                        .build(),
+                ),
+            }
+        });
     }
 
     fn copy_revisions(&self) {
