@@ -1,5 +1,6 @@
 //! The public facade: one [`Svn`] per application, cheap to clone.
 
+use crate::cache::ListBuilder;
 use crate::error::{ErrorKind, SvnError};
 use crate::job::{CancelToken, Job, Stream};
 use crate::model::*;
@@ -26,7 +27,8 @@ pub struct SvnConfig {
     pub interactive: bool,
     /// Entries per batch for streaming results.
     pub batch_size: usize,
-    /// Max total directory entries held by the list cache.
+    /// Max total directory entries held by the list cache (about 100 bytes
+    /// each).
     pub list_cache_entries: usize,
     /// Max bytes held by the cat cache.
     pub cat_cache_bytes: usize,
@@ -40,7 +42,7 @@ impl Default for SvnConfig {
             max_concurrent_per_host: 4,
             interactive: true,
             batch_size: 1000,
-            list_cache_entries: 2_000_000,
+            list_cache_entries: 500_000,
             cat_cache_bytes: 64 * 1024 * 1024,
         }
     }
@@ -369,7 +371,7 @@ impl Svn {
         if let Some(hit) = self.inner.cache.get_list(url.as_str(), rev) {
             return self.spawn_stream(move |_, _, b| {
                 for e in hit.iter() {
-                    if !b.push(e.clone()) {
+                    if !b.push(e.to_entry()) {
                         break;
                     }
                 }
@@ -386,12 +388,12 @@ impl Svn {
                 &url.with_peg(&Rev::Number(rev)),
             ]);
             let limit = inner.config.list_cache_entries;
-            let mut all: Vec<Entry> = Vec::new();
+            let mut all = ListBuilder::default();
             let mut cacheable = true;
             let mut complete = false;
             inner.execute(&url, &a, prio, ctx, |r, stop| {
                 b.reset();
-                all.clear();
+                all = ListBuilder::default();
                 cacheable = true;
                 let res = parse::list(r, |e| {
                     if stop.is_stopped() {
@@ -399,10 +401,10 @@ impl Svn {
                     }
                     if cacheable {
                         if all.len() < limit {
-                            all.push(e.clone());
+                            all.push(&e);
                         } else {
                             cacheable = false;
-                            all = Vec::new();
+                            all = ListBuilder::default();
                         }
                     }
                     if !b.push(e) {
@@ -413,7 +415,7 @@ impl Svn {
                 res
             })?;
             if complete && cacheable && b.flush() {
-                inner.cache.put_list(url.as_str(), rev, Arc::new(all));
+                inner.cache.put_list(url.as_str(), rev, all.finish());
             }
             Ok(())
         })

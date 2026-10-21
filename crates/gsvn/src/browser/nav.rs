@@ -233,6 +233,21 @@ pub fn natural_cmp(a_key: &str, a_name: &str, b_key: &str, b_name: &str) -> Orde
     a_key.cmp(b_key).then_with(|| a_name.cmp(b_name))
 }
 
+/// Whether `hay` contains `needle_lower` (already lower-cased), ignoring
+/// case. ASCII names, the common case, are compared without allocating.
+pub fn contains_ignore_case(hay: &str, needle_lower: &str) -> bool {
+    if needle_lower.is_empty() {
+        return true;
+    }
+    if hay.is_ascii() && needle_lower.is_ascii() {
+        let (h, n) = (hay.as_bytes(), needle_lower.as_bytes());
+        return h.len() >= n.len()
+            && h.windows(n.len())
+                .any(|w| w.iter().zip(n).all(|(a, b)| a.to_ascii_lowercase() == *b));
+    }
+    hay.to_lowercase().contains(needle_lower)
+}
+
 /// Visual indentation of a tree row: `(indent levels, show depth badge)`.
 /// Indentation stops growing after `cap` levels.
 pub fn tree_indent(depth: u32, cap: u32) -> (u32, bool) {
@@ -242,6 +257,16 @@ pub fn tree_indent(depth: u32, cap: u32) -> (u32, bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn contains_ignoring_case() {
+        assert!(contains_ignore_case("README.txt", "readme"));
+        assert!(contains_ignore_case("file0777.c", "777"));
+        assert!(contains_ignore_case("abc", ""));
+        assert!(!contains_ignore_case("ab", "abc"));
+        assert!(!contains_ignore_case("Makefile", "mk"));
+        assert!(contains_ignore_case("ÄRGER.md", "ärger"));
+    }
 
     fn u(s: &str) -> RepoUrl {
         RepoUrl::parse(s).unwrap()

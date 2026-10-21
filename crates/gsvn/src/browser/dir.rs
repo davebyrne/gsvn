@@ -4,6 +4,7 @@
 //! placeholder row while loading), so each directory is listed once.
 
 use super::entry::{EntryKind, EntryObject};
+use super::store::EntryStore;
 use gtk::{gio, glib, prelude::*};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -33,7 +34,7 @@ pub struct DirModel {
     /// Tree depth of the directory itself (root = 0); children are +1.
     pub depth: u32,
     /// All entries (file list).
-    pub store: gio::ListStore,
+    pub store: EntryStore,
     /// Subdirectories, plus a trailing placeholder while loading/failed.
     pub dirs: gio::ListStore,
     state: RefCell<LoadState>,
@@ -69,7 +70,7 @@ impl DirModel {
     }
 
     pub fn n_items(&self) -> u32 {
-        self.store.n_items()
+        self.store.len()
     }
 
     /// Start listing unless already loaded or loading. A background load
@@ -175,6 +176,7 @@ impl DirModel {
         self.token.take();
         let state = match result {
             Ok(()) => {
+                self.store.shrink_to_fit();
                 self.set_placeholder(None);
                 if self.dirs.n_items() == 0
                     && let Some(owner) = self.owner.borrow().upgrade()
@@ -287,7 +289,7 @@ impl DirCache {
         let model = Rc::new(DirModel {
             url: Rc::new(url.clone()),
             depth,
-            store: gio::ListStore::new::<EntryObject>(),
+            store: EntryStore::default(),
             dirs: gio::ListStore::new::<EntryObject>(),
             state: RefCell::new(LoadState::Idle),
             prio: Cell::new(Priority::Background),

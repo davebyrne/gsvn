@@ -18,22 +18,55 @@ pub enum EntryKind {
     Error,
 }
 
+/// One entry's data. Kept compact: a 100k-entry directory holds 100k of
+/// these (DESIGN.md §13).
 #[derive(Debug)]
 pub struct EntryData {
-    pub name: String,
+    pub name: Box<str>,
     pub kind: EntryKind,
     /// The directory containing this entry (shared by all its siblings).
     pub dir: Rc<RepoUrl>,
     pub size: Option<u64>,
     pub rev: RevNum,
-    pub author: Option<String>,
+    /// Interned: a directory has few distinct authors.
+    pub author: Option<Rc<str>>,
     pub date: Option<Timestamp>,
-    /// [`nav::natural_key`] of the name.
-    pub key: Box<str>,
+    /// [`nav::natural_key`] of the name; `None` when it equals the name.
+    key: Option<Box<str>>,
     /// Tree depth below the repository root (root = 0).
     pub depth: u32,
     /// Set for the root node only (its URL is not `dir` + `name`).
-    pub self_url: Option<RepoUrl>,
+    pub self_url: Option<Box<RepoUrl>>,
+}
+
+impl EntryData {
+    /// [`nav::natural_key`] of the name.
+    pub fn key(&self) -> &str {
+        self.key.as_deref().unwrap_or(&self.name)
+    }
+}
+
+/// The natural key of `name`, stored only if it differs from the name.
+fn key_of(name: &str) -> Option<Box<str>> {
+    let key = nav::natural_key(name);
+    (key != name).then(|| key.into_boxed_str())
+}
+
+/// Share one allocation per distinct author string (per thread; the
+/// browser only builds entries on the main thread).
+fn intern_author(author: Option<String>) -> Option<Rc<str>> {
+    thread_local! {
+        static AUTHORS: std::cell::RefCell<std::collections::HashSet<Rc<str>>> = Default::default();
+    }
+    let author = author?;
+    Some(AUTHORS.with_borrow_mut(|set| match set.get(author.as_str()) {
+        Some(rc) => rc.clone(),
+        None => {
+            let rc: Rc<str> = Rc::from(author);
+            set.insert(rc.clone());
+            rc
+        }
+    }))
 }
 
 mod imp {
@@ -70,7 +103,7 @@ mod imp {
 
         fn property(&self, _id: usize, pspec: &ParamSpec) -> Value {
             match pspec.name() {
-                "name" => self.data.get().map(|d| d.name.as_str()).to_value(),
+                "name" => self.data.get().map(|d| &*d.name).to_value(),
                 "childless" => self.childless.get().to_value(),
                 _ => unreachable!(),
             }
@@ -99,9 +132,9 @@ impl EntryObject {
     }
 
     pub fn new(entry: Entry, dir: &Rc<RepoUrl>, depth: u32) -> Self {
-        let key = nav::natural_key(&entry.name).into_boxed_str();
         Self::with_data(EntryData {
-            name: entry.name,
+            key: key_of(&entry.name),
+            name: entry.name.into_boxed_str(),
             kind: match entry.kind {
                 NodeKind::Dir => EntryKind::Dir,
                 NodeKind::File => EntryKind::File,
@@ -109,9 +142,8 @@ impl EntryObject {
             dir: dir.clone(),
             size: entry.size,
             rev: entry.last_changed.rev,
-            author: entry.last_changed.author,
+            author: intern_author(entry.last_changed.author),
             date: entry.last_changed.date,
-            key,
             depth,
             self_url: None,
         })
@@ -122,8 +154,8 @@ impl EntryObject {
         let name = root.name();
         let dir = Rc::new(root.clone());
         Self::with_data(EntryData {
-            key: nav::natural_key(&name).into_boxed_str(),
-            name,
+            key: key_of(&name),
+            name: name.into_boxed_str(),
             kind: EntryKind::Dir,
             dir,
             size: None,
@@ -131,20 +163,20 @@ impl EntryObject {
             author: None,
             date: None,
             depth: 0,
-            self_url: Some(root.clone()),
+            self_url: Some(Box::new(root.clone())),
         })
     }
 
     pub fn placeholder(kind: EntryKind, text: &str, dir: &Rc<RepoUrl>, depth: u32) -> Self {
         Self::with_data(EntryData {
-            name: text.to_owned(),
+            name: text.into(),
             kind,
             dir: dir.clone(),
             size: None,
             rev: 0,
             author: None,
             date: None,
-            key: Box::from(""),
+            key: Some(Box::from("")),
             depth,
             self_url: None,
         })
@@ -174,7 +206,7 @@ impl EntryObject {
     pub fn url(&self) -> RepoUrl {
         let d = self.data();
         match &d.self_url {
-            Some(url) => url.clone(),
+            Some(url) => (**url).clone(),
             None => d.dir.join(&d.name),
         }
     }
@@ -202,7 +234,7 @@ use gtk::prelude::Cast;
 
 /// Natural name order.
 pub fn cmp_name(a: &EntryData, b: &EntryData) -> Ordering {
-    nav::natural_cmp(&a.key, &a.name, &b.key, &b.name)
+    nav::natural_cmp(a.key(), &a.name, b.key(), &b.name)
 }
 
 /// Directories before files (and placeholders last).
