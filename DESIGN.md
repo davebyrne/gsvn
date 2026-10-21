@@ -323,9 +323,12 @@ diff tool can't break the parsing.
 
 - `svn-backend::cache`: LRU in-memory caches, session-scoped, never written to
   disk.
-  - `list`: key `(url, rev)`, bounded by total entry count (e.g. 2M entries).
+  - `list`: key `(url, rev)`, bounded by total entry count (500k entries,
+    about 100 bytes each: entries are stored compactly with shared author
+    strings).
   - `log pages`: key `(url, peg, query, start)`.
-  - `changed paths`: key `(repo_uuid, rev)`.
+  - `changed paths`: key `(url, rev)`, bounded by the number of changed paths
+    (200k; one revision can change 50k paths).
   - `cat` / `blame`: key `(url, rev)`, bounded by bytes (e.g. 64 MB).
 - Keys always hold **numeric revisions**, so entries never go stale. Refresh
   re-resolves HEAD to a new number, which naturally misses the cache.
