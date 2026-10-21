@@ -110,7 +110,9 @@ fn url_path(url: &RepoUrl) -> String {
 
 fn spec_url(spec: &DiffSpec) -> &RepoUrl {
     match spec {
-        DiffSpec::Change { url, .. } | DiffSpec::ChangeAt { url, .. } | DiffSpec::Range { url, .. } => url,
+        DiffSpec::Change { url, .. }
+        | DiffSpec::ChangeAt { url, .. }
+        | DiffSpec::Range { url, .. } => url,
     }
 }
 
@@ -122,10 +124,18 @@ fn title_for(spec: &DiffSpec, path: &str) -> String {
     }
 }
 
-/// URL of a file in the diff. svn prints paths relative to the target;
-/// when the target is a file, the path is just its name.
-fn file_url(spec: &DiffSpec, path: &str) -> RepoUrl {
-    let base = spec_url(spec);
+/// Revision at which the diff target's URL is valid.
+fn spec_peg(spec: &DiffSpec) -> RevNum {
+    match *spec {
+        DiffSpec::Change { rev, .. } => rev,
+        DiffSpec::ChangeAt { peg, .. } | DiffSpec::Range { peg, .. } => peg,
+    }
+}
+
+/// URL of a file in the diff, given the target's URL (`base`) at the
+/// revision of interest. svn prints paths relative to the target; when the
+/// target is a file, the path is just its name.
+fn file_url(base: &RepoUrl, path: &str) -> RepoUrl {
     if path.is_empty() || path == "." || (!path.contains('/') && base.name() == path) {
         base.clone()
     } else {
@@ -136,7 +146,9 @@ fn file_url(spec: &DiffSpec, path: &str) -> RepoUrl {
 /// Old and new revision of the two sides.
 fn sides(spec: &DiffSpec) -> (RevNum, RevNum) {
     match *spec {
-        DiffSpec::Change { rev, .. } | DiffSpec::ChangeAt { rev, .. } => (rev.saturating_sub(1), rev),
+        DiffSpec::Change { rev, .. } | DiffSpec::ChangeAt { rev, .. } => {
+            (rev.saturating_sub(1), rev)
+        }
         DiffSpec::Range { from, to, .. } => (from, to),
     }
 }
@@ -270,10 +282,7 @@ impl DiffWindow {
 
     /// Replace the URL path in the title by the repository path once known.
     fn resolve_title(self: &Rc<Self>) {
-        let peg = match self.spec {
-            DiffSpec::Change { rev, .. } => rev,
-            DiffSpec::ChangeAt { peg, .. } | DiffSpec::Range { peg, .. } => peg,
-        };
+        let peg = spec_peg(&self.spec);
         let job = self
             .ctx
             .svn
@@ -736,12 +745,16 @@ impl DiffWindow {
         page.set_child(Some(&details));
         self.show_status(page);
 
-        let url = file_url(&self.spec, &diff.path);
+        // The target may have been renamed or moved since either side
+        // (`ChangeAt`, `Range` with a later peg): resolve its URL at each
+        // side's revision first, then look up the file there.
+        let target = spec_url(&self.spec).clone();
+        let peg = spec_peg(&self.spec);
         let (old_rev, new_rev) = sides(&self.spec);
-        let svn = &self.ctx.svn;
-        let old = svn.info(&url, &Rev::Number(old_rev), Priority::Normal);
-        let new = svn.info(&url, &Rev::Number(new_rev), Priority::Normal);
-        let props = svn.proplist(&url, new_rev, Priority::Normal);
+        let path = diff.path.clone();
+        let svn = self.ctx.svn.clone();
+        let old_base = svn.info_at(&target, peg, old_rev, Priority::Normal);
+        let new_base = svn.info_at(&target, peg, new_rev, Priority::Normal);
         let prop_lines: Vec<String> = diff
             .prop_changes
             .iter()
@@ -756,18 +769,47 @@ impl DiffWindow {
             .collect();
         let details = details.downgrade();
         let task = glib::spawn_future_local(async move {
-            let size = |r: Result<svn_backend::Info, SvnError>| {
-                r.ok()
-                    .and_then(|i| i.size)
+            let size = |i: Option<svn_backend::Info>| {
+                i.and_then(|i| i.size)
                     .map_or_else(|| "—".to_owned(), common::format_size)
             };
-            let old = size(old.result().await);
-            let new = size(new.result().await);
-            let mime = props.result().await.ok().and_then(|p| {
+            // `url` of the file on the side at `rev`, once the target's
+            // URL there is known.
+            let file_at = |base: Result<svn_backend::Info, SvnError>| {
+                base.ok().map(|i| file_url(&i.url, &path))
+            };
+            let old_url = file_at(old_base.result().await);
+            let new_url = file_at(new_base.result().await);
+            let info = |url: &Option<RepoUrl>, rev| {
+                url.as_ref()
+                    .map(|u| svn.info(u, &Rev::Number(rev), Priority::Normal))
+            };
+            let (old, new) = (info(&old_url, old_rev), info(&new_url, new_rev));
+            let old = match old {
+                Some(job) => job.result().await.ok(),
+                None => None,
+            };
+            let new = match new {
+                Some(job) => job.result().await.ok(),
+                None => None,
+            };
+            // MIME type from the new side, or the old one for a deletion.
+            let props_at = if new.is_some() {
+                new_url.map(|u| (u, new_rev))
+            } else {
+                old_url.map(|u| (u, old_rev))
+            };
+            let mime = match props_at {
+                Some((u, rev)) => svn.proplist(&u, rev, Priority::Normal).result().await.ok(),
+                None => None,
+            }
+            .and_then(|p| {
                 p.into_iter()
                     .find(|p| p.name == "svn:mime-type")
                     .map(|p| p.value)
             });
+            let old = size(old);
+            let new = size(new);
             let Some(details) = details.upgrade() else {
                 return;
             };
@@ -1150,16 +1192,22 @@ mod tests {
         assert_eq!(sides(&range), (10, 20));
 
         assert_eq!(
-            file_url(&change, "sub/a b.c").as_str(),
+            file_url(&url, "sub/a b.c").as_str(),
             "https://h/svn/repo/trunk/my%20dir/sub/a%20b.c"
         );
-        assert_eq!(file_url(&change, "my dir").as_str(), url.as_str());
-        assert_eq!(file_url(&change, ".").as_str(), url.as_str());
-        let file = DiffSpec::Change {
-            url: RepoUrl::parse("https://h/r/Makefile").unwrap(),
-            rev: 2,
-        };
+        assert_eq!(file_url(&url, "my dir").as_str(), url.as_str());
+        assert_eq!(file_url(&url, ".").as_str(), url.as_str());
+        let file = RepoUrl::parse("https://h/r/Makefile").unwrap();
         assert_eq!(file_url(&file, "Makefile").as_str(), "https://h/r/Makefile");
+        assert_eq!(spec_peg(&change), 1234);
+        assert_eq!(spec_peg(&range), 30);
+        let at = DiffSpec::ChangeAt {
+            url: url.clone(),
+            peg: 50,
+            rev: 7,
+        };
+        assert_eq!(spec_peg(&at), 50);
+        assert_eq!(sides(&at), (6, 7));
 
         assert_eq!(files_label(1, ""), "1 file");
         assert!(large_diff_title(3, 6_000_000).starts_with("This diff is large (3 files, ~6"));

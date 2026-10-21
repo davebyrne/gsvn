@@ -3,6 +3,7 @@
 //!
 //! ```text
 //! GSVN_DEBUG_DIFF="URL REV"            open `-c REV` (instead of the start window)
+//! GSVN_DEBUG_DIFF="URL REV@PEG"      open `-c REV URL@PEG` (`ChangeAt`)
 //! GSVN_DEBUG_DIFF="URL FROM:TO[@PEG]"  open `-r FROM:TO URL@PEG` (PEG defaults to TO)
 //! GSVN_DIFF_SELECT=N        select file N once the diff has loaded
 //! GSVN_DIFF_SBS=1           switch to side-by-side
@@ -55,6 +56,12 @@ fn parse_spec(s: &str) -> Option<DiffSpec> {
             None => to,
         };
         Some(DiffSpec::Range { url, peg, from, to })
+    } else if let Some((rev, peg)) = revs.split_once('@') {
+        Some(DiffSpec::ChangeAt {
+            url,
+            peg: peg.parse().ok()?,
+            rev: rev.parse().ok()?,
+        })
     } else {
         Some(DiffSpec::Change {
             url,
@@ -69,7 +76,7 @@ pub fn open(ctx: &Rc<Ctx>) -> bool {
         return false;
     };
     let Some(spec) = parse_spec(&spec) else {
-        eprintln!("GSVN_DEBUG_DIFF: expected \"URL REV\" or \"URL FROM:TO[@PEG]\"");
+        eprintln!("GSVN_DEBUG_DIFF: expected \"URL REV[@PEG]\" or \"URL FROM:TO[@PEG]\"");
         return false;
     };
     if env("GSVN_DIFF_DARK").is_some() {
@@ -245,6 +252,14 @@ mod tests {
             Some(DiffSpec::Range {
                 from: 3,
                 to: 9,
+                peg: 20,
+                ..
+            })
+        ));
+        assert!(matches!(
+            parse_spec("http://h/r/f.c 3@20"),
+            Some(DiffSpec::ChangeAt {
+                rev: 3,
                 peg: 20,
                 ..
             })
