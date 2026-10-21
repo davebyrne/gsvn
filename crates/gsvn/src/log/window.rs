@@ -357,7 +357,10 @@ impl LogWindow {
             .has_arrow(false)
             .halign(gtk::Align::Start)
             .build();
-        path_popover.set_parent(&paths_view);
+        // Not parented to the column view: there, after a menu model change
+        // the popover was sized before the Ctrl+C accel label (found through
+        // the view's shortcuts) was added, cutting off the last item.
+        path_popover.set_parent(&single);
         path_menu_button.set_menu_model(Some(&path_menu(None)));
 
         let range = RevRange::new(None, None, peg);
@@ -1206,12 +1209,12 @@ impl LogWindow {
         if !self.selection.is_selected(pos) {
             self.selection.select_item(pos, true);
         }
-        popup_at(&self.rev_menu, &self.revisions, widget, x, y);
+        popup_at(&self.rev_menu, widget, x, y);
     }
 
     pub(super) fn path_context_menu(&self, pos: u32, widget: &gtk::Widget, x: f64, y: f64) {
         self.paths_selection.set_selected(pos);
-        popup_at(&self.path_popover, &self.paths_view, widget, x, y);
+        popup_at(&self.path_popover, widget, x, y);
     }
 
     // ---- actions -------------------------------------------------------
@@ -1378,14 +1381,18 @@ fn path_menu(target: Option<(RevNum, bool)>) -> gio::Menu {
     section.append(Some("Show _Log of This Path"), Some("log.path-log"));
     menu.append_section(None, &section);
     let section = gio::Menu::new();
-    section.append(Some("_Copy Path"), Some("log.path-copy"));
+    let copy = gio::MenuItem::new(Some("_Copy Path"), Some("log.path-copy"));
+    // Shown as a hint: the shortcut itself is on the changed-paths list.
+    copy.set_attribute_value("accel", Some(&"<Control>c".to_variant()));
+    section.append_item(&copy);
     menu.append_section(None, &section);
     menu
 }
 
-fn popup_at(popover: &gtk::PopoverMenu, parent: &impl IsA<gtk::Widget>, widget: &gtk::Widget, x: f64, y: f64) {
+fn popup_at(popover: &gtk::PopoverMenu, widget: &gtk::Widget, x: f64, y: f64) {
+    let Some(parent) = popover.parent() else { return };
     let point = widget
-        .compute_point(parent, &gtk::graphene::Point::new(x as f32, y as f32))
+        .compute_point(&parent, &gtk::graphene::Point::new(x as f32, y as f32))
         .unwrap_or_else(|| gtk::graphene::Point::new(x as f32, y as f32));
     popover.set_pointing_to(Some(&gdk::Rectangle::new(point.x() as i32, point.y() as i32, 1, 1)));
     popover.popup();
