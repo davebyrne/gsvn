@@ -6,6 +6,11 @@
 //!   an action (`group.name`), type into the filter (`filter=TEXT`),
 //!   open the context menu of list row N (`menu=N`) or select a tree row
 //!   (`tree=N`).
+//!   Timing commands: `filtertime=TEXT` sets the file list filter
+//!   directly (no search-entry delay) and reports the time until the
+//!   filtered list is sorted; `scroll=SECS` scrolls the file list from
+//!   top to bottom over SECS seconds and reports frame times; `rss`
+//!   prints the resident set size.
 //! - `GSVN_BROWSER_SNAPSHOT=/path/out.png` (+ `GSVN_BROWSER_SNAPSHOT_AT`
 //!   seconds, default 4): render the window to a PNG, then quit.
 //!
@@ -131,7 +136,7 @@ fn run(b: &Rc<Browser>, cmd: &str) {
         }
         "revpopover" => b.rev_button.popup(),
         "dump" => {
-            let n = b.files.sort_model.n_items();
+            let n = b.files.n_shown();
             let pending = b.files.sort_model.pending();
             let first: Vec<String> = (0..n.min(arg.parse().unwrap_or(5)))
                 .filter_map(|i| b.files.item(i))
@@ -139,8 +144,74 @@ fn run(b: &Rc<Browser>, cmd: &str) {
                 .collect();
             eprintln!("dump: {n} items, {pending} pending sort: {first:?}");
         }
+        "filtertime" => filter_time(b, arg),
+        "scroll" => scroll_time(b, arg.parse().unwrap_or(3.0)),
+        "rss" => eprintln!("rss: {}", super::rss()),
         _ => eprintln!("GSVN_BROWSER_SCRIPT: unknown command {cmd}"),
     }
+}
+
+fn filter_time(b: &Rc<Browser>, text: &str) {
+    let t = std::time::Instant::now();
+    b.files.set_filter_text(text);
+    let sync = t.elapsed();
+    let text = text.to_owned();
+    let shown = b.files.filter_model.clone();
+    let report = move |_: &gtk::SortListModel| {
+        eprintln!(
+            "filtertime {text:?}: {} matches, filter {:.1} ms, sorted after {:.1} ms",
+            shown.n_items(),
+            sync.as_secs_f64() * 1000.0,
+            t.elapsed().as_secs_f64() * 1000.0,
+        );
+    };
+    let model = b.files.sort_model.clone();
+    if model.pending() == 0 {
+        report(&model);
+        return;
+    }
+    b.files.view.add_tick_callback(move |_, _| {
+        if model.pending() > 0 {
+            return glib::ControlFlow::Continue;
+        }
+        report(&model);
+        glib::ControlFlow::Break
+    });
+}
+
+/// Scroll the file list top to bottom over `secs`, one step per frame,
+/// and report frame intervals.
+fn scroll_time(b: &Rc<Browser>, secs: f64) {
+    let adj = b.files.scrolled.vadjustment();
+    adj.set_value(0.0);
+    let start = std::cell::Cell::new(None::<i64>);
+    let last = std::cell::Cell::new(0i64);
+    let frames = std::cell::RefCell::new(Vec::<f64>::new());
+    b.files.view.add_tick_callback(move |_, clock| {
+        let now = clock.frame_time();
+        let t0 = start.get().unwrap_or(now);
+        start.set(Some(t0));
+        if last.get() != 0 {
+            frames.borrow_mut().push((now - last.get()) as f64 / 1000.0);
+        }
+        last.set(now);
+        let f = ((now - t0) as f64 / 1e6 / secs).min(1.0);
+        adj.set_value(f * (adj.upper() - adj.page_size()));
+        if f < 1.0 {
+            return glib::ControlFlow::Continue;
+        }
+        let v = frames.borrow();
+        let n = v.len().max(1) as f64;
+        let avg = v.iter().sum::<f64>() / n;
+        let worst = v.iter().cloned().fold(0.0, f64::max);
+        let slow = v.iter().filter(|&&d| d > 20.0).count();
+        eprintln!(
+            "scroll: {} frames, avg {avg:.1} ms ({:.0} fps), worst {worst:.1} ms, {slow} frames > 20 ms",
+            v.len(),
+            1000.0 / avg
+        );
+        glib::ControlFlow::Break
+    });
 }
 
 fn snapshot(window: &adw::ApplicationWindow, path: &str) {
