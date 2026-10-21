@@ -360,14 +360,65 @@ diff tool can't break the parsing.
 
 ## 13. Performance budget (targets)
 
-| Scenario | Target |
-|---|---|
-| Cold start to start window | < 300 ms |
-| Idle RSS, one browser window | < 60 MB |
-| First rows visible in a 100k-entry directory | ≤ svn latency + 200 ms |
-| Scroll / filter in a 100k-entry list | 60 fps, filter < 50 ms |
-| Log first page (200 revs) | ≤ svn latency + 100 ms |
-| Jump to a path 40 levels deep | file list shown after 1 `list` call |
+| Scenario | Target | Measured (release, 2026-10) |
+|---|---|---|
+| Cold start to start window | < 300 ms | 245–265 ms (empty libadwaita app: 215–225 ms) |
+| Idle RSS, one browser window | ≤ toolkit baseline + 10 MB (was < 60 MB) | 101 MB; baseline 94.5 MB (see below) |
+| Memory per entry of a loaded directory | ≤ 600 B | ~510 B (100k entries: 153 MB) |
+| First rows visible in a 100k-entry directory | ≤ svn latency + 200 ms | 62–83 ms after the listing starts (svn: first entry at 61 ms) |
+| Scroll / filter in a 100k-entry list | 60 fps, filter < 50 ms | 58 fps scrolling all 100k rows in 3 s; filter 25–110 ms, **over budget** in GTK's row rebuild — the filtering itself is ≤ 15 ms (see below) |
+| Log first page (200 revs) | ≤ svn latency + 100 ms | in the model at 44–53 ms, painted by ≤ 90 ms (svn alone: 10–16 ms) |
+| Jump to a path 40 levels deep | file list shown after 1 `list` call | yes: `info`, then `list` of the target; the tree fills in after |
+
+How it was measured: Fedora 44, GTK 4.22.5, libadwaita 1.9.4, Mesa 26.2
+(Intel UHD, Comet Lake GT2), the test server on localhost, a private
+headless mutter (`scripts/headless.sh`). RSS is `VmRSS` from
+`/proc/PID/status` of a plain `cargo build --release` binary; timings come
+from the debug hooks in a release build with debug assertions
+(`GSVN_DEBUG_STARTUP`, `G_MESSAGES_DEBUG=gsvn-browser`,
+`GSVN_BROWSER_SCRIPT=…filtertime=…;scroll=…`, `GSVN_LOG_SCRIPT`). Warm
+runs; the first run in a fresh D-Bus session is ~100 ms slower because the
+desktop portal is started.
+
+**Why not 60 MB.** The 60 MB idle target is below what the toolkit needs
+before gsvn draws anything. With GTK's default (Vulkan) renderer:
+
+| Process (release) | VmRSS | of which anon |
+|---|---|---|
+| empty `GtkWindow` | 92.5 MB | 16.8 MB |
+| libadwaita window with a header bar | 94.5 MB | 17.5 MB |
+| … plus a 4-column `ColumnView` | 96.6 MB | 19.7 MB |
+| … plus GtkSourceView | 97.2 MB | 18.0 MB |
+| gsvn start window | 99.0 MB | 19.2 MB |
+| gsvn browser, `small` loaded | 101 MB | 20.2 MB |
+
+About 80 MB of that is file-backed and shared with other processes (PSS
+of the idle browser is ~31 MB). Roughly 34 MB of it is the Vulkan loader
+loading every installed Mesa driver to pick a GPU (lavapipe pulls in
+libLLVM alone, 25 MB): with `VK_LOADER_DRIVERS_SELECT='*intel*'` the idle
+browser is 68 MB and an empty `GtkWindow` 59 MB. With
+`GSK_RENDERER=cairo` it is 61 MB (empty window 51 MB); `GSK_RENDERER=gl`
+is 106–140 MB depending on the driver. So all absolute RSS figures are
+renderer- and driver-dependent; the budget is therefore relative to an
+empty libadwaita window in the same session. gsvn's own share is ~5 MB
+over a libadwaita window with a `ColumnView`.
+
+**Per-entry memory.** A loaded entry costs the GObject with its data
+(~190 B), the name and the natural sort key (~60 B), GTK's sort and
+filter models, and the backend list cache (~100 B, shared by all windows).
+Author strings are shared (interned) in both the browser and the cache.
+
+**Filter.** The filter runs above the sort, so changing it never
+re-sorts; computing the matches for 100k names takes ≤ 15 ms (0.1 ms
+when the filter only gets stricter). The rest of the 25–110 ms is GTK
+destroying and recreating the row widgets of the visible rows whose item
+changed, which does not grow with the directory size. The search entry
+adds its usual 150 ms typing delay before any of this.
+
+Other windows, for reference: log window 110 MB (200 rows; ~310 B per
+further row); diff window 108 MB (small change), 126 MB with the 36k-row
+`small` r4 (rendered in 74 ms) or `history` r100000 (pauses at 21,400 of
+50,001 files, 1.7 s); file viewer 106–110 MB.
 
 ## 14. Key crates
 
