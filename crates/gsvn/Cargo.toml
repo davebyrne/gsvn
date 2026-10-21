@@ -15,6 +15,7 @@ toml = "1.1.6"
 oo7 = { version = "0.6.0", default-features = false, features = ["async-std", "native_crypto"] }
 glib = { version = "0.22", features = ["v2_80"] }
 gio = { version = "0.22", features = ["v2_80"] }
+similar = { version = "3.2.0", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 tempfile = "3.27"

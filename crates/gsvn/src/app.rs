@@ -93,6 +93,8 @@ pub fn run() -> glib::ExitCode {
         });
         crate::auth::install(&ctx);
         install_actions(&ctx);
+        #[cfg(debug_assertions)]
+        crate::viewer::debug::hook(&ctx);
         {
             let ctx = ctx.clone();
             app.connect_activate(move |_| crate::start::open(&ctx));
@@ -133,6 +135,10 @@ fn parse_command(args: &[String], rev: Option<&str>, log: bool) -> Result<Comman
 }
 
 fn handle_command_line(ctx: &Rc<Ctx>, cmd: &gio::ApplicationCommandLine) -> glib::ExitCode {
+    #[cfg(debug_assertions)]
+    if crate::diff::debug_open(ctx) {
+        return glib::ExitCode::SUCCESS;
+    }
     let options = cmd.options_dict();
     let rev = options.lookup::<String>("rev").ok().flatten();
     let log = options.contains("log");

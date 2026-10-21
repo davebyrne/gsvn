@@ -29,9 +29,16 @@ impl RepoUrl {
         let mut out = String::with_capacity(s.len());
         out.push_str(&scheme.to_ascii_lowercase());
         let bytes = rest.as_bytes();
+        // IPv6 literals (`[::1]`) are only legal in the authority part.
+        let authority_end = rest.find('/').unwrap_or(rest.len());
         let mut i = 0;
         while i < bytes.len() {
             let b = bytes[i];
+            if i < authority_end && (b == b'[' || b == b']') {
+                out.push(b as char);
+                i += 1;
+                continue;
+            }
             if b == b'%'
                 && i + 2 < bytes.len()
                 && bytes[i + 1].is_ascii_hexdigit()
@@ -109,7 +116,6 @@ impl RepoUrl {
         if scheme == "file" {
             return "file://".to_owned();
         }
-        // RepoUrl::parse percent-encodes IPv6 brackets; undo that here.
         let authority = decode(rest.split('/').next().unwrap_or(""));
         let authority = authority.as_str();
         let hostport = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
@@ -259,6 +265,12 @@ mod tests {
         assert_eq!(k("http://[::1]:8080/r"), "http://[::1]:8080");
         assert_eq!(k("http://[::1]/r"), "http://[::1]:80");
         assert_eq!(k("file:///tmp/repo"), "file://");
+    }
+
+    #[test]
+    fn ipv6_brackets_kept_in_authority_only() {
+        let u = RepoUrl::parse("http://[::1]:8080/r/[x]").unwrap();
+        assert_eq!(u.as_str(), "http://[::1]:8080/r/%5Bx%5D");
     }
 
     #[test]
