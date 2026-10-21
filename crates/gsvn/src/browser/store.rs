@@ -112,9 +112,9 @@ mod tests {
         let dir = Rc::new(RepoUrl::parse("http://h/r").unwrap());
         let a = EntryObject::placeholder(super::super::entry::EntryKind::Loading, "a", &dir, 1);
         let b = EntryObject::placeholder(super::super::entry::EntryKind::Loading, "b", &dir, 1);
-        store.extend_from_slice(&[a.clone()]);
+        store.extend_from_slice(&[a]);
         store.extend_from_slice(&[]);
-        store.extend_from_slice(&[b.clone()]);
+        store.extend_from_slice(&[b]);
         assert_eq!(store.len(), 2);
         assert_eq!(store.item(1).and_downcast::<EntryObject>().unwrap().name(), "b");
         assert!(store.item(2).is_none());
