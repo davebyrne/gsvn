@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<blame>
+<target
+   path="https://svn.apache.org/repos/asf/subversion/trunk/doc/README">
+<entry
+   line-number="1">
+<commit
+   revision="839458">
+<author>sussman</author>
+<date>2001-06-04T22:00:53.000000Z</date>
+</commit>
+</entry>
+<entry
+   line-number="2">
+<commit
+   revision="839458">
+<author>sussman</author>
+<date>2001-06-04T22:00:53.000000Z</date>
+</commit>
+</entry>
+<entry
+   line-number="3">
+<commit
+   revision="836496">
+<author>sussman</author>
+<date>2000-05-23T18:21:22.000000Z</date>
+</commit>
+</entry>
+<entry
+   line-number="4">
+<commit
+   revision="839458">
+<author>sussman</author>
+<date>2001-06-04T22:00:53.000000Z</date>
+</commit>
+</entry>
+<entry
+   line-number="5">
+<commit
+   revision="836812">
+<author>sussman</author>
+<date>2000-08-01T18:06:13.000000Z</date>
+</commit>
+</entry>
+<entry
+   line-number="6">
+<commit
+   revision="1903577">
+<author>hartmannathan</author>
+<date>2022-08-19T16:31:35.591491Z</date>
+</commit>
+</entry>
+<entry
+   line-number="7">
+<commit
+   revision="857430">
+<author>maxb</author>
+<date>2005-11-15T17:45:47.689972Z</date>
+</commit>
+</entry>
+<entry
+   line-number="8">
+<commit
+   revision="857430">
+<author>maxb</author>
+<date>2005-11-15T17:45:47.689972Z</date>
+</commit>
+</entry>
+<entry
+   line-number="9">
+<commit
+   revision="857430">
+<author>maxb</author>
+<date>2005-11-15T17:45:47.689972Z</date>
+</commit>
+</entry>
+<entry
+   line-number="10">
+<commit
+   revision="857430">
+<author>maxb</author>
+<date>2005-11-15T17:45:47.689972Z</date>
+</commit>
+</entry>
+<entry
+   line-number="11">
+<commit
+   revision="857430">
+<author>maxb</author>
+<date>2005-11-15T17:45:47.689972Z</date>
+</commit>
+</entry>
+<entry
+   line-number="12">
+<commit
+   revision="854476">
+<author>maxb</author>
+<date>2005-04-22T10:40:38.528096Z</date>
+</commit>
+</entry>
+<entry
+   line-number="13">
+<commit
+   revision="854476">
+<author>maxb</author>
+<date>2005-04-22T10:40:38.528096Z</date>
+</commit>
+</entry>
+<entry
+   line-number="14">
+<commit
+   revision="855127">
+<author>dlr</author>
+<date>2005-06-14T16:29:18.914979Z</date>
+</commit>
+</entry>
+<entry
+   line-number="15">
+<commit
+   revision="854476">
+<author>maxb</author>
+<date>2005-04-22T10:40:38.528096Z</date>
+</commit>
+</entry>
+<entry
+   line-number="16">
+<commit
+   revision="854476">
+<author>maxb</author>
+<date>2005-04-22T10:40:38.528096Z</date>
+</commit>
+</entry>
+<entry
+   line-number="17">
+<commit
+   revision="842632">
+<author>sussman</author>
+<date>2002-07-17T04:54:44.945628Z</date>
+</commit>
+</entry>
+<entry
+   line-number="18">
+<commit
+   revision="842632">
+<author>sussman</author>
+<date>2002-07-17T04:54:44.945628Z</date>
+</commit>
+</entry>
+<entry
+   line-number="19">
+<commit
+   revision="839458">
+<author>sussman</author>
+<date>2001-06-04T22:00:53.000000Z</date>
+</commit>
+</entry>
+<entry
+   line-number="20">
+<commit
+   revision="855957">
+<author>sunny256</author>
+<date>2005-08-22T11:52:38.505771Z</date>
+</commit>
+</entry>
+<entry
+   line-number="21">
+<commit
+   revision="855957">
+<author>sunny256</author>
+<date>2005-08-22T11:52:38.505771Z</date>
+</commit>
+</entry>
+<entry
+   line-number="22">
+<commit
+   revision="836812">
+<author>sussman</author>
+<date>2000-08-01T18:06:13.000000Z</date>
+</commit>
+</entry>
+<entry
+   line-number="23">
+<commit
+   revision="860096">
+<author>madanus</author>
+<date>2006-06-09T09:18:01.755805Z</date>
+</commit>
+</entry>
+<entry
+   line-number="24">
+<commit
+   revision="836812">
+<author>sussman</author>
+<date>2000-08-01T18:06:13.000000Z</date>
+</commit>
+</entry>
+<entry
+   line-number="25">
+<commit
+   revision="842632">
+<author>sussman</author>
+<date>2002-07-17T04:54:44.945628Z</date>
+</commit>
+</entry>
+<entry
+   line-number="26">
+<commit
+   revision="839458">
+<author>sussman</author>
+<date>2001-06-04T22:00:53.000000Z</date>
+</commit>
+</entry>
+<entry
+   line-number="27">
+<commit
+   revision="854476">
+<author>maxb</author>
+<date>2005-04-22T10:40:38.528096Z</date>
+</commit>
+</entry>
+<entry
+   line-number="28">
+<commit
+   revision="854476">
+<author>maxb</author>
+<date>2005-04-22T10:40:38.528096Z</date>
+</commit>
+</entry>
+</target>
+</blame>

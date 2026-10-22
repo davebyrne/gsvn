@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<blame>
+<target
+   path="file:///tmp/gsvn-fixture/repo/trunk/hello.txt">
+<entry
+   line-number="1">
+</entry>
+<entry
+   line-number="2">
+</entry>
+<entry
+   line-number="3">
+<commit
+   revision="3">
+<author>carol</author>
+<date>2026-03-04T05:06:07.000000Z</date>
+</commit>
+</entry>
+<entry
+   line-number="4">
+</entry>
+<entry
+   line-number="5">
+</entry>
+<entry
+   line-number="6">
+</entry>
+<entry
+   line-number="7">
+</entry>
+<entry
+   line-number="8">
+</entry>
+<entry
+   line-number="9">
+</entry>
+<entry
+   line-number="10">
+</entry>
+<entry
+   line-number="11">
+</entry>
+<entry
+   line-number="12">
+</entry>
+<entry
+   line-number="13">
+</entry>
+<entry
+   line-number="14">
+</entry>
+<entry
+   line-number="15">
+</entry>
+<entry
+   line-number="16">
+</entry>
+<entry
+   line-number="17">
+</entry>
+<entry
+   line-number="18">
+</entry>
+<entry
+   line-number="19">
+</entry>
+<entry
+   line-number="20">
+</entry>
+<entry
+   line-number="21">
+</entry>
+<entry
+   line-number="22">
+</entry>
+<entry
+   line-number="23">
+</entry>
+<entry
+   line-number="24">
+</entry>
+<entry
+   line-number="25">
+<commit
+   revision="3">
+<author>carol</author>
+<date>2026-03-04T05:06:07.000000Z</date>
+</commit>
+</entry>
+<entry
+   line-number="26">
+</entry>
+<entry
+   line-number="27">
+</entry>
+<entry
+   line-number="28">
+</entry>
+<entry
+   line-number="29">
+</entry>
+</target>
+</blame>

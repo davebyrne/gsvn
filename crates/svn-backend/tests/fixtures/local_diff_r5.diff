@@ -1,0 +1,138 @@
+Index: branches/feature-1/a b.txt
+===================================================================
+--- branches/feature-1/a b.txt	(nonexistent)
++++ branches/feature-1/a b.txt	(revision 5)
+@@ -0,0 +1 @@
++spaces
+Index: branches/feature-1/amp&co.txt
+===================================================================
+--- branches/feature-1/amp&co.txt	(nonexistent)
++++ branches/feature-1/amp&co.txt	(revision 5)
+@@ -0,0 +1 @@
++amp
+Index: branches/feature-1/at@sign.txt
+===================================================================
+--- branches/feature-1/at@sign.txt	(nonexistent)
++++ branches/feature-1/at@sign.txt	(revision 5)
+@@ -0,0 +1 @@
++at
+Index: branches/feature-1/binary.bin
+===================================================================
+Cannot display: file marked as a binary type.
+svn:mime-type = application/octet-stream
+
+Property changes on: branches/feature-1/binary.bin
+___________________________________________________________________
+Added: svn:mime-type
+## -0,0 +1 ##
++application/octet-stream
+\ No newline at end of property
+Index: branches/feature-1/crlf.txt
+===================================================================
+--- branches/feature-1/crlf.txt	(nonexistent)
++++ branches/feature-1/crlf.txt	(revision 5)
+@@ -0,0 +1,3 @@
++one
++TWO
++three
+Index: branches/feature-1/dashes.txt
+===================================================================
+--- branches/feature-1/dashes.txt	(nonexistent)
++++ branches/feature-1/dashes.txt	(revision 5)
+@@ -0,0 +1,7 @@
++keep
++--- new dashes
++middle
+++++ new plus
++Index: still not a header
++@@ -1 +1 @@ not a hunk
++end
+Index: branches/feature-1/empty.txt
+===================================================================
+Index: branches/feature-1/hello.txt
+===================================================================
+--- branches/feature-1/hello.txt	(nonexistent)
++++ branches/feature-1/hello.txt	(revision 5)
+@@ -0,0 +1,29 @@
++line 1
++line 2
++line three
++line 4
++line 5
++line 6
++line 7
++line 8
++line 9
++line 10
++line 11
++line 12
++line 13
++line 14
++line 15
++line 16
++line 17
++line 18
++line 19
++line 20
++line 21
++line 22
++line 23
++line 24
++line twenty-five
++line 26
++line 28
++line 29
++line 30
+
+Property changes on: branches/feature-1/hello.txt
+___________________________________________________________________
+Added: my:binary
+## -0,0 +1 ##
++binary
+\ No newline at end of property
+Added: my:multi
+## -0,0 +1,2 ##
++line one
++line two
+Added: my:prop
+## -0,0 +1 ##
++single value
+\ No newline at end of property
+Index: branches/feature-1/latin1.txt
+===================================================================
+--- branches/feature-1/latin1.txt	(nonexistent)
++++ branches/feature-1/latin1.txt	(revision 5)
+@@ -0,0 +1,2 @@
++caf�
++na�ve!
+Index: branches/feature-1/noeol.txt
+===================================================================
+--- branches/feature-1/noeol.txt	(nonexistent)
++++ branches/feature-1/noeol.txt	(revision 5)
+@@ -0,0 +1,2 @@
++first
++last changed, still no newline
+\ No newline at end of file
+Index: branches/feature-1/sub dir/nested.txt
+===================================================================
+--- branches/feature-1/sub dir/nested.txt	(nonexistent)
++++ branches/feature-1/sub dir/nested.txt	(revision 5)
+@@ -0,0 +1 @@
++nested
+Index: branches/feature-1/unicodé-日本.txt
+===================================================================
+--- branches/feature-1/unicodé-日本.txt	(nonexistent)
++++ branches/feature-1/unicodé-日本.txt	(revision 5)
+@@ -0,0 +1 @@
++unicode
+Index: branches/feature-1
+===================================================================
+--- branches/feature-1	(nonexistent)
++++ branches/feature-1	(revision 5)
+
+Property changes on: branches/feature-1
+___________________________________________________________________
+Added: svn:ignore
+## -0,0 +1,2 ##
++*.o
++*.tmp

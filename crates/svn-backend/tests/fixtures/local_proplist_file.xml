@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<properties>
+<target
+   path="file:///tmp/gsvn-fixture/repo/trunk/hello.txt">
+<property
+   name="my:binary"
+   encoding="base64">YmluAWFyeQI=
+</property>
+<property
+   name="my:multi">line one
+line two
+</property>
+<property
+   name="my:prop">single value</property>
+</target>
+</properties>

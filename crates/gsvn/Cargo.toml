@@ -1,0 +1,21 @@
+[package]
+name = "gsvn"
+description = "Lightweight Subversion repository browser for GNOME"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+svn-backend.workspace = true
+gtk.workspace = true
+adw.workspace = true
+sourceview5.workspace = true
+serde = { version = "1.0.228", features = ["derive"] }
+toml = "1.1.6"
+oo7 = { version = "0.6.0", default-features = false, features = ["async-std", "native_crypto"] }
+glib = { version = "0.22", features = ["v2_80"] }
+gio = { version = "0.22", features = ["v2_80"] }
+similar = { version = "3.2.0", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+tempfile = "3.27"

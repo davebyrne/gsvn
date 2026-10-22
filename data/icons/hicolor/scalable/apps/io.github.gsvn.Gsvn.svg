@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="face" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#62a0ea"/>
+      <stop offset="1" stop-color="#3584e4"/>
+    </linearGradient>
+  </defs>
+  <!-- base with a darker edge for depth -->
+  <rect x="12" y="22" width="104" height="94" rx="16" fill="#1a5fb4"/>
+  <rect x="12" y="14" width="104" height="94" rx="16" fill="url(#face)"/>
+  <!-- revision graph: trunk with a branch -->
+  <g fill="none" stroke="#ffffff" stroke-width="8" stroke-linecap="round">
+    <path d="M46 36 V86"/>
+    <path d="M46 52 C46 64 82 56 82 70"/>
+  </g>
+  <g fill="#ffffff" stroke="#1c71d8" stroke-width="4">
+    <circle cx="46" cy="36" r="10"/>
+    <circle cx="46" cy="86" r="10"/>
+    <circle cx="82" cy="72" r="10"/>
+  </g>
+</svg>

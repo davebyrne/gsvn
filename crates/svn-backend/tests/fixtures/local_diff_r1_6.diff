@@ -1,0 +1,128 @@
+Index: amp&co.txt
+===================================================================
+--- amp&co.txt	(nonexistent)
++++ amp&co.txt	(revision 6)
+@@ -0,0 +1 @@
++replaced
+Index: at@sign.txt
+===================================================================
+--- at@sign.txt	(nonexistent)
++++ at@sign.txt	(revision 6)
+@@ -0,0 +1 @@
++at
+Index: binary.bin
+===================================================================
+Cannot display: file marked as a binary type.
+svn:mime-type = application/octet-stream
+
+Property changes on: binary.bin
+___________________________________________________________________
+Added: svn:mime-type
+## -0,0 +1 ##
++application/octet-stream
+\ No newline at end of property
+Index: crlf.txt
+===================================================================
+--- crlf.txt	(nonexistent)
++++ crlf.txt	(revision 6)
+@@ -0,0 +1,3 @@
++one
++TWO
++three
+Index: dashes.txt
+===================================================================
+--- dashes.txt	(nonexistent)
++++ dashes.txt	(revision 6)
+@@ -0,0 +1,7 @@
++keep
++--- new dashes
++middle
+++++ new plus
++Index: still not a header
++@@ -1 +1 @@ not a hunk
++end
+Index: hello.txt
+===================================================================
+--- hello.txt	(nonexistent)
++++ hello.txt	(revision 6)
+@@ -0,0 +1,29 @@
++line 1
++line 2
++line three
++line 4
++line 5
++line 6
++line 7
++line 8
++line 9
++line 10
++line 11
++line 12
++line 13
++line 14
++line 15
++line 16
++line 17
++line 18
++line 19
++line 20
++line 21
++line 22
++line 23
++line 24
++line twenty-five
++line 26
++line 28
++line 29
++line 30
+
+Property changes on: hello.txt
+___________________________________________________________________
+Added: my:binary
+## -0,0 +1 ##
++binary
+\ No newline at end of property
+Added: my:prop
+## -0,0 +1 ##
++changed value
+\ No newline at end of property
+Index: latin1.txt
+===================================================================
+--- latin1.txt	(nonexistent)
++++ latin1.txt	(revision 6)
+@@ -0,0 +1,2 @@
++caf�
++na�ve!
+Index: new-empty.txt
+===================================================================
+Index: noeol.txt
+===================================================================
+--- noeol.txt	(nonexistent)
++++ noeol.txt	(revision 6)
+@@ -0,0 +1,2 @@
++first
++last changed, still no newline
+\ No newline at end of file
+Index: sub dir/nested.txt
+===================================================================
+--- sub dir/nested.txt	(nonexistent)
++++ sub dir/nested.txt	(revision 6)
+@@ -0,0 +1 @@
++nested
+Index: unicodé-日本.txt
+===================================================================
+--- unicodé-日本.txt	(nonexistent)
++++ unicodé-日本.txt	(revision 6)
+@@ -0,0 +1 @@
++unicode
+Index: .
+===================================================================
+--- .	(revision 1)
++++ .	(revision 6)
+
+Property changes on: .
+___________________________________________________________________
+Added: svn:ignore
+## -0,0 +1,2 ##
++*.o
++*.tmp
