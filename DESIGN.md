@@ -363,7 +363,7 @@ diff tool can't break the parsing.
 | Scenario | Target | Measured (release, 2026-10) |
 |---|---|---|
 | Cold start to start window | < 300 ms | 245–265 ms (empty libadwaita app: 215–225 ms) |
-| Idle RSS, one browser window | ≤ toolkit baseline + 10 MB (was < 60 MB) | 101 MB; baseline 94.5 MB (see below) |
+| Idle RSS, one browser window | ≤ toolkit baseline + 10 MB (was < 60 MB; changed 2026-10-21) | 101 MB; baseline 94.5 MB (see below) |
 | Memory per entry of a loaded directory | ≤ 600 B | ~510 B (100k entries: 153 MB) |
 | First rows visible in a 100k-entry directory | ≤ svn latency + 200 ms | 62–83 ms after the listing starts (svn: first entry at 61 ms) |
 | Scroll / filter in a 100k-entry list | 60 fps, filter < 50 ms | 58 fps scrolling all 100k rows in 3 s; filter 25–110 ms, **over budget** in GTK's row rebuild — the filtering itself is ≤ 15 ms (see below) |

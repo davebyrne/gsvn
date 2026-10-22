@@ -61,7 +61,7 @@ pub fn revision_columns(view: &gtk::ColumnView, context: &ContextHandler) {
     let rev = column(
         "Revision",
         || {
-            let label = cell_label(gtk::pango::EllipsizeMode::None, 0.0);
+            let label = cell_label(gtk::pango::EllipsizeMode::None, 1.0);
             label.add_css_class("numeric");
             label
         },
@@ -119,6 +119,8 @@ pub fn revision_columns(view: &gtk::ColumnView, context: &ContextHandler) {
     for c in [rev, author, date, message] {
         view.append_column(&c);
     }
+    // Numbers right-aligned, header included, as in the browser's Rev column.
+    common::align_titles_end(view, &["Revision"]);
 }
 
 /// Style class and tooltip for a change action.

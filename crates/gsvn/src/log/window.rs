@@ -320,6 +320,8 @@ impl LogWindow {
         single.append(&paths_stack);
 
         let details_stack = gtk::Stack::new();
+        // Shown instead of "none" while there are no revisions to select.
+        details_stack.add_named(&gtk::Box::new(gtk::Orientation::Vertical, 0), Some("blank"));
         details_stack.add_named(&none_page, Some("none"));
         details_stack.add_named(&multi_page, Some("multi"));
         details_stack.add_named(&single, Some("single"));
@@ -737,6 +739,9 @@ impl LogWindow {
         self.page_banner.set_revealed(false);
         self.store.remove_all();
         self.list_stack.set_visible_child_name("loading");
+        if self.selected_count() == 0 {
+            self.show_no_selection();
+        }
         self.content_stack.set_visible_child_name("main");
         if let Some(old) = self.content_stack.child_by_name("error") {
             self.content_stack.remove(&old);
@@ -860,6 +865,9 @@ impl LogWindow {
         drop(st);
         if self.store.n_items() > 0 {
             self.list_stack.set_visible_child_name("list");
+            if self.selected_count() == 0 {
+                self.show_no_selection();
+            }
         } else if done {
             self.empty_page.set_title(if searching { "No Matching Revisions" } else { "No Revisions" });
             self.empty_page.set_description(Some(if searching {
@@ -1027,12 +1035,18 @@ impl LogWindow {
         }
     }
 
+    /// The details pane with nothing selected: blank until the list has rows.
+    fn show_no_selection(&self) {
+        let name = if self.store.n_items() > 0 { "none" } else { "blank" };
+        self.details_stack.set_visible_child_name(name);
+    }
+
     fn update_details(self: &Rc<Self>) {
         let count = self.selected_count();
         if count != 1 {
             self.cancel_paths();
             if count == 0 {
-                self.details_stack.set_visible_child_name("none");
+                self.show_no_selection();
             } else {
                 self.multi_page.set_title(&format!("{} Revisions Selected", group_digits(count)));
                 self.multi_page.set_description(Some(if count == 2 {

@@ -12,7 +12,9 @@ pick it up.
   - all four windows: browser, log, diff, viewer/blame
   - the end-to-end pass, the release performance pass and the polish pass
 - **Build state:**
-  - `cargo test`: 191 pass, and `GSVN_TEST_HTTP=1` passes too
+  - `cargo test`: 192 pass, and `GSVN_TEST_HTTP=1` passes too (one
+    unidentified HTTP test failed once on 2026-10-21 and then passed in
+    six reruns)
   - `cargo clippy --all-targets`: zero warnings
   - the release build runs cleanly
 - **All HANDOFF next steps from 2026-10-15 are done.** What is left is
@@ -38,6 +40,7 @@ worktrees have been removed. The branches are kept only for history.
 | `e2e/links` | cross-window pass, `GSVN_E2E_SCRIPT` hook, 7 link and menu bugs fixed |
 | `perf/release` | release-build §13 measurements, compact browser model and caches |
 | `polish/ui` | shortcuts dialog, state persistence, scaffolding removed, header nits |
+| `polish/nits` | the five visual nits from 2026-10-21: log Revision alignment, blank details while loading, tree reveal scroll, Makefile assignments, intra-line for a line kept inside the other |
 
 ## Process
 
@@ -104,25 +107,20 @@ and `history`.
 ## Open items
 
 - **Performance (DESIGN §13 now has measured release numbers):**
-  - Idle RSS is about 101 MB against the original 60 MB target. The toolkit
-    baseline alone is 92–97 MB, and about 34 MB of that is the Vulkan loader
-    loading every Mesa driver. §13 now proposes "toolkit baseline + 10 MB";
-    the user should confirm that target.
+  - Idle RSS is about 101 MB, within the §13 target of "toolkit baseline +
+    10 MB" that the user accepted on 2026-10-21 (the old 60 MB target was
+    below GTK's own 92–97 MB).
   - Filtering a 100k list takes 25–110 ms against the 50 ms target. The
     filter itself takes at most 15 ms; the rest is GTK rebuilding the
     visible row widgets. Fewer or lighter widgets per row, such as
     `GtkInscription`, could help.
   - Log rows cost about 310 B each and authors are not interned
     (`RevisionItem`).
-- **Visual nits:**
-  - The log's Revision column is left-aligned, but the browser's Rev column
-    is right-aligned.
-  - The log shows "No Revision Selected" while its first page is loading.
-  - In the tree, a folder revealed at the bottom of the sidebar is selected
-    but its children are out of view.
-  - Makefile highlighting is minimal: the language is detected, but the
-    Adwaita scheme barely colors it.
-  - The changed line pair in apache r1938822 has no intra-line highlight.
+- **Style schemes:** source views use gsvn's own `gsvn`/`gsvn-dark`
+  schemes (Adwaita plus Makefile assignment names), written to
+  `~/.cache/gsvn/styles` on first use; they fall back to Adwaita if that
+  fails. GtkSourceView's `use-style` can't refer to the parent scheme, so
+  each extra style needs explicit colors.
 - **Shortcut change:** the viewer's Go to Line is now **Ctrl+I**; it was
   Ctrl+L and Ctrl+G. Ctrl+G and Ctrl+Shift+G are Next and Previous Match.
 - **Not testable headlessly:**

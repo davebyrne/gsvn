@@ -1061,7 +1061,10 @@ impl Browser {
                 glib::g_debug!(LOG_DOMAIN, "tree revealed {} levels in {:?}", segments.len(), started.elapsed());
             }
             // Show the target's subdirectories too: same listing as the file list.
-            if expand_target && !row.is_expanded() && !row.item().and_downcast::<EntryObject>().is_some_and(|e| e.is_childless()) {
+            let expanded = expand_target
+                && !row.is_expanded()
+                && !row.item().and_downcast::<EntryObject>().is_some_and(|e| e.is_childless());
+            if expanded {
                 row.set_expanded(true);
             }
             let pos = row.position();
@@ -1071,16 +1074,55 @@ impl Browser {
             // Again over the next frames: rows bound in between can differ
             // from the estimated height and leave the target just off screen.
             this.tree.view.scroll_to(pos, gtk::ListScrollFlags::NONE, None);
-            let weak = Rc::downgrade(&this);
+            let tick_weak = weak.clone();
             let frames = Cell::new(0);
             this.tree.view.add_tick_callback(move |view, _| {
                 frames.set(frames.get() + 1);
-                let Some(this) = weak.upgrade() else { return glib::ControlFlow::Break };
+                let Some(this) = tick_weak.upgrade() else { return glib::ControlFlow::Break };
                 if this.state.borrow().reveal_gen != generation {
                     return glib::ControlFlow::Break;
                 }
                 view.scroll_to(pos, gtk::ListScrollFlags::NONE, None);
                 if frames.get() < 3 { glib::ControlFlow::Continue } else { glib::ControlFlow::Break }
+            });
+            if !expanded {
+                return;
+            }
+            // Once the subdirectories are listed, bring as many of them into
+            // view as fit below the target (a target at the bottom of the
+            // sidebar would otherwise hide them all): scroll to the last
+            // child, then on the next frame back to the target if that
+            // scrolled it out. One scroll per frame, after the ones above,
+            // as each `scroll_to` replaces the last until the next layout.
+            let dir = cache.get(&url);
+            drop(this);
+            dir.wait_idle().await;
+            let Some(this) = weak.upgrade() else { return };
+            if this.state.borrow().reveal_gen != generation {
+                return;
+            }
+            let frames = Cell::new(0);
+            this.tree.view.add_tick_callback(move |view, _| {
+                frames.set(frames.get() + 1);
+                let Some(this) = weak.upgrade() else { return glib::ControlFlow::Break };
+                if this.state.borrow().reveal_gen != generation || !row.is_expanded() {
+                    return glib::ControlFlow::Break;
+                }
+                match frames.get() {
+                    4 => {
+                        let n = row.children().map_or(0, |c| c.n_items());
+                        let Some(last) = n.checked_sub(1).and_then(|i| row.child_row(i)) else {
+                            return glib::ControlFlow::Break;
+                        };
+                        view.scroll_to(last.position(), gtk::ListScrollFlags::NONE, None);
+                    }
+                    5 => {
+                        view.scroll_to(row.position(), gtk::ListScrollFlags::NONE, None);
+                        return glib::ControlFlow::Break;
+                    }
+                    _ => {}
+                }
+                glib::ControlFlow::Continue
             });
         });
     }
