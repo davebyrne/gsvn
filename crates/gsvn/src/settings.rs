@@ -170,6 +170,11 @@ impl Settings {
         self.save_bookmarks();
     }
 
+    pub fn remove_recent(&self, url: &str) {
+        self.data.borrow_mut().recent.retain(|u| u != url);
+        self.save_bookmarks();
+    }
+
     pub fn clear_recent(&self) {
         self.data.borrow_mut().recent.clear();
         self.save_bookmarks();
@@ -347,6 +352,12 @@ mod tests {
         assert_eq!(r[0], "https://h/10");
         assert_eq!(r[1], "https://h/24");
         assert_eq!(r.iter().filter(|u| *u == "https://h/10").count(), 1);
+        assert_eq!(load(&dir).recent(), r);
+
+        s.remove_recent("https://h/24");
+        let r = s.recent();
+        assert_eq!(r.len(), MAX_RECENT - 1);
+        assert!(!r.contains(&"https://h/24".to_owned()));
         assert_eq!(load(&dir).recent(), r);
 
         s.clear_recent();

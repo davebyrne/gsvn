@@ -209,7 +209,10 @@ impl Page {
     }
 
     fn update_empty(&self) {
-        let empty = !self.bookmarks_group.is_visible() && !self.recent_group.is_visible();
+        // From the settings, not the groups' visibility: AdwPreferencesGroup
+        // can report itself hidden while it shows rows.
+        let settings = &self.ctx.settings;
+        let empty = settings.bookmarks().is_empty() && settings.recent().is_empty();
         self.empty.set_visible(empty);
     }
 
@@ -267,7 +270,26 @@ impl Page {
                 .activatable(true)
                 .build();
             row.add_prefix(&gtk::Image::from_icon_name("document-open-recent-symbolic"));
+            let remove = gtk::Button::builder()
+                .icon_name("user-trash-symbolic")
+                .tooltip_text("Remove from Recent")
+                .valign(gtk::Align::Center)
+                .css_classes(["flat"])
+                .build();
+            row.add_suffix(&remove);
             row.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
+            {
+                // Recents don't signal changes: rebuild here.
+                let page = Rc::downgrade(self);
+                let url = url.clone();
+                remove.connect_clicked(move |_| {
+                    if let Some(page) = page.upgrade() {
+                        page.ctx.settings.remove_recent(&url);
+                        page.rebuild_recent();
+                        page.update_empty();
+                    }
+                });
+            }
             let page = Rc::downgrade(self);
             row.connect_activated(move |_| {
                 if let Some(page) = page.upgrade() {
