@@ -8,7 +8,8 @@
 //! The result is a list of changed **character** ranges per side (GTK text
 //! iterators count characters, not bytes). `None` means "don't highlight":
 //! the lines are identical, too long, or so different that highlighting
-//! nearly everything would only add noise.
+//! nearly everything would only add noise. A line kept whole inside the
+//! other (`char *s;` → `char *s = f(x);`) is never "too different".
 
 use similar::{Algorithm, DiffTag};
 use std::ops::Range;
@@ -16,6 +17,9 @@ use std::time::{Duration, Instant};
 
 /// Lines longer than this (in chars) are not diffed.
 pub const MAX_LINE_CHARS: usize = 500;
+/// A line kept whole inside the other needs at least this many
+/// non-whitespace tokens to count (a lone `}` or `;` does not).
+const KEPT_LINE_TOKENS: usize = 2;
 /// Both lines with at most this many non-whitespace tokens → char-level.
 /// (More than one word per side diffed per char gives scattered noise.)
 const SHORT_LINE_TOKENS: usize = 1;
@@ -164,9 +168,12 @@ pub fn intra_line(old: &str, new: &str) -> Option<IntraRanges> {
     if old_ranges.is_empty() && new_ranges.is_empty() {
         return None;
     }
-    // Less than a third in common: the whole line changed, no highlights.
+    // Less than a third in common: the whole line changed, no highlights,
+    // unless one line is all still there and only the other has changes.
+    let kept = (old_ranges.is_empty() && non_space(&old_toks) >= KEPT_LINE_TOKENS)
+        || (new_ranges.is_empty() && non_space(&new_toks) >= KEPT_LINE_TOKENS);
     let total = non_space_chars(&old_toks).max(non_space_chars(&new_toks));
-    if total > 0 && equal * 3 < total {
+    if !kept && total > 0 && equal * 3 < total {
         return None;
     }
     Some((merge(old_ranges, &old_chars), merge(new_ranges, &new_chars)))
@@ -240,6 +247,20 @@ mod tests {
         let (o, n) = intra_line("author: jürgen smith here", "author: jürgen jones here").unwrap();
         assert_eq!(o, vec![15..20]);
         assert_eq!(n, vec![15..20]);
+    }
+
+    #[test]
+    fn line_kept_inside_the_other() {
+        // apache r1938822: the initializer moved further down.
+        let old = "      char *errstr = apr_palloc(logger->pool, errstr_size);";
+        let (o, n) = intra_line(old, "      char *errstr;").unwrap();
+        assert_eq!(o, vec![18..58]);
+        assert!(n.is_empty());
+        let (o, n) = intra_line("      char *errstr;", old).unwrap();
+        assert!(o.is_empty());
+        assert_eq!(n, vec![18..58]);
+        // A lone brace is not enough.
+        assert_eq!(intra_line("}", "} else if (retry_count > max_retries) {"), None);
     }
 
     #[test]

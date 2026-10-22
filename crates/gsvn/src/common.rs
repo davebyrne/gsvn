@@ -165,13 +165,49 @@ pub fn follow_style_scheme(buffer: &sourceview5::Buffer) {
         let buffer = buffer.downgrade();
         move |manager: &adw::StyleManager| {
             let Some(buffer) = buffer.upgrade() else { return };
-            let id = if manager.is_dark() { "Adwaita-dark" } else { "Adwaita" };
-            let scheme = sourceview5::StyleSchemeManager::default().scheme(id);
-            buffer.set_style_scheme(scheme.as_ref());
+            buffer.set_style_scheme(style_scheme(manager.is_dark()).as_ref());
         }
     };
     apply(&manager);
     manager.connect_dark_notify(apply);
+}
+
+/// gsvn's style schemes: Adwaita plus styles it leaves plain, such as
+/// Makefile variable assignments (`CFLAGS = …`), which get the color of
+/// the parent's `def:type` like the variables' uses (`use-style` cannot
+/// refer to the parent scheme). Id, parent, `def:type` color.
+const STYLE_SCHEMES: [(&str, &str, &str); 2] =
+    [("gsvn", "Adwaita", "#218787"), ("gsvn-dark", "Adwaita-dark", "#5BC8AF")];
+
+/// The source style scheme for the light or dark style. gsvn's schemes are
+/// written to the cache directory on first use; Adwaita if that fails.
+fn style_scheme(dark: bool) -> Option<sourceview5::StyleScheme> {
+    thread_local! {
+        static INSTALLED: bool = install_style_schemes();
+    }
+    let (id, parent, _) = STYLE_SCHEMES[usize::from(dark)];
+    let manager = sourceview5::StyleSchemeManager::default();
+    let installed = INSTALLED.with(|i| *i);
+    installed.then(|| manager.scheme(id)).flatten().or_else(|| manager.scheme(parent))
+}
+
+fn install_style_schemes() -> bool {
+    let dir = glib::user_cache_dir().join("gsvn").join("styles");
+    let written = std::fs::create_dir_all(&dir).is_ok()
+        && STYLE_SCHEMES.iter().all(|(id, parent, type_color)| {
+            let xml = format!(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+                 <style-scheme id=\"{id}\" name=\"gsvn ({parent})\" version=\"1.0\" parent-scheme=\"{parent}\">\n\
+                 <style name=\"makefile:assignment-lhs\" foreground=\"{type_color}\" bold=\"true\"/>\n\
+                 </style-scheme>\n"
+            );
+            let path = dir.join(format!("{id}.xml"));
+            std::fs::read_to_string(&path).is_ok_and(|old| old == xml) || std::fs::write(&path, xml).is_ok()
+        });
+    if written {
+        sourceview5::StyleSchemeManager::default().append_search_path(&dir.to_string_lossy());
+    }
+    written
 }
 
 /// The shared primary menu (☰) model: New Window, Keyboard Shortcuts,
@@ -247,6 +283,37 @@ pub fn group_thousands(n: usize) -> String {
         out.push(c);
     }
     out
+}
+
+/// Right-align the header titles of the named columns. GTK has no API
+/// for this: each `GtkColumnViewTitle` holds a box with the label and the
+/// sort arrow; the box is moved to the end, the arrow before the label.
+pub fn align_titles_end(view: &gtk::ColumnView, titles: &[&str]) {
+    let mut stack = vec![view.clone().upcast::<gtk::Widget>()];
+    while let Some(w) = stack.pop() {
+        if w.type_().name() == "GtkColumnViewTitle" {
+            let Some(content) = w.first_child() else { continue };
+            let label = content.first_child().and_downcast::<gtk::Label>();
+            if let Some(label) = label.filter(|l| titles.contains(&l.label().as_str()))
+                && let Some(content) = content.downcast_ref::<gtk::Box>()
+            {
+                content.set_halign(gtk::Align::End);
+                // Sort arrow before the label, so the text ends where the values do.
+                if let Some(arrow) = label.next_sibling() {
+                    content.reorder_child_after(&label, Some(&arrow));
+                }
+            }
+            continue;
+        }
+        let mut child = w.first_child();
+        while let Some(c) = child {
+            child = c.next_sibling();
+            // The rows are not needed (and may be many).
+            if c.css_name() != "listview" {
+                stack.push(c);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
