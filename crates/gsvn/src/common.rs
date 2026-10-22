@@ -107,6 +107,15 @@ pub fn is_binary(data: &[u8], mime_type: Option<&str>) -> bool {
 /// A status page describing an error, with an optional Retry button and a
 /// Details expander showing the svn command and stderr (DESIGN.md §12).
 pub fn error_page(err: &SvnError, retry: Option<Box<dyn Fn()>>) -> adw::StatusPage {
+    error_page_with(err, retry, None)
+}
+
+/// Like [`error_page`], with an extra `(label, action)` button below Retry.
+pub fn error_page_with(
+    err: &SvnError,
+    retry: Option<Box<dyn Fn()>>,
+    extra: Option<(&str, Box<dyn Fn()>)>,
+) -> adw::StatusPage {
     let (icon, title) = match err.kind {
         ErrorKind::NotFound => ("edit-find-symbolic", "Not Found"),
         ErrorKind::Auth => ("dialog-password-symbolic", "Authentication Failed"),
@@ -131,6 +140,16 @@ pub fn error_page(err: &SvnError, retry: Option<Box<dyn Fn()>>) -> adw::StatusPa
             .css_classes(["pill", "suggested-action"])
             .build();
         button.connect_clicked(move |_| retry());
+        content.append(&button);
+    }
+    if let Some((label, action)) = extra {
+        let button = gtk::Button::builder()
+            .label(label)
+            .use_underline(true)
+            .halign(gtk::Align::Center)
+            .css_classes(["pill"])
+            .build();
+        button.connect_clicked(move |_| action());
         content.append(&button);
     }
     if !err.command.is_empty() || !err.stderr.is_empty() {

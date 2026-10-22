@@ -802,14 +802,28 @@ impl Browser {
                 } else {
                     let weak = Rc::downgrade(this);
                     let retry_url = url.clone();
-                    let page = common::error_page(
-                        &err,
-                        Some(Box::new(move || {
-                            if let Some(this) = weak.upgrade() {
-                                this.go_to(retry_url.clone(), Some(rev.clone()));
-                            }
-                        })),
-                    );
+                    let retry_rev = rev.clone();
+                    let retry: Box<dyn Fn()> = Box::new(move || {
+                        if let Some(this) = weak.upgrade() {
+                            this.go_to(retry_url.clone(), Some(retry_rev.clone()));
+                        }
+                    });
+                    // Nothing was ever shown here: back to the start window
+                    // to enter a different URL.
+                    let weak = Rc::downgrade(this);
+                    let change_url = url.clone();
+                    let change_rev = match rev {
+                        Rev::Number(n) => Some(n),
+                        _ => None,
+                    };
+                    let change: Box<dyn Fn()> = Box::new(move || {
+                        let Some(this) = weak.upgrade() else { return };
+                        crate::start::open_with(&this.ctx, &change_url, change_rev);
+                        if let Some(window) = this.window.upgrade() {
+                            window.close();
+                        }
+                    });
+                    let page = common::error_page_with(&err, Some(retry), Some(("_Change URL…", change)));
                     this.set_window_title(&url.name(), "");
                     this.content.remove(&this.content.child_by_name("error").expect("error page"));
                     this.content.add_named(&page, Some("error"));

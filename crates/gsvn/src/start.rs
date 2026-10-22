@@ -13,8 +13,18 @@ pub fn open(ctx: &Rc<Ctx>) {
     open_window(ctx);
 }
 
+/// Open the start window with the URL and revision fields filled in
+/// (e.g. after `url` failed to open).
+pub fn open_with(ctx: &Rc<Ctx>, url: &RepoUrl, rev: Option<RevNum>) {
+    build(ctx, Some((url, rev)));
+}
+
 /// Like [`open`], returning the presented window (e.g. to parent a dialog).
 pub fn open_window(ctx: &Rc<Ctx>) -> adw::ApplicationWindow {
+    build(ctx, None)
+}
+
+fn build(ctx: &Rc<Ctx>, prefill: Option<(&RepoUrl, Option<RevNum>)>) -> adw::ApplicationWindow {
     let window = common::new_window(ctx, "start", "gsvn", (640, 560));
 
     let header = adw::HeaderBar::new();
@@ -150,8 +160,15 @@ pub fn open_window(ctx: &Rc<Ctx>) -> adw::ApplicationWindow {
         let _keep_alive = &page;
     });
 
+    if let Some((url, rev)) = prefill {
+        url_row.set_text(&decode(url.as_str()));
+        rev_row.set_text(&rev.map(|r| r.to_string()).unwrap_or_default());
+    }
     window.present();
     url_row.grab_focus();
+    if prefill.is_some() {
+        url_row.select_region(0, -1);
+    }
     window
 }
 
